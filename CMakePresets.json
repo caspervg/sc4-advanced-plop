@@ -1,0 +1,43 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "vs2022-win32-debug",
+            "displayName": "Visual Studio 2022 Win32 Debug",
+            "description": "32-bit Debug build for SC4 compatibility",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "Win32",
+            "binaryDir": "${sourceDir}/cmake-build-debug-visual-studio",
+            "cacheVariables": {
+                "CMAKE_GENERATOR_PLATFORM": "Win32",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vs2022-win32-release",
+            "displayName": "Visual Studio 2022 Win32 Release", 
+            "description": "32-bit Release build for SC4 compatibility",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "Win32",
+            "binaryDir": "${sourceDir}/cmake-build-release-visual-studio",
+            "cacheVariables": {
+                "CMAKE_GENERATOR_PLATFORM": "Win32",
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "vs2022-win32-debug-build",
+            "displayName": "Build Win32 Debug",
+            "configurePreset": "vs2022-win32-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vs2022-win32-release-build", 
+            "displayName": "Build Win32 Release",
+            "configurePreset": "vs2022-win32-release",
+            "configuration": "Release"
+        }
+    ]
+}
