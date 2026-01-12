@@ -4,11 +4,21 @@
 #include "ExemplarReader.h"
 #include "PropertyMapper.hpp"
 
+constexpr auto kZero = 0x0000000u;
 constexpr auto kExemplarType = "Exemplar Type";
-constexpr auto kPropertyExemplarTypeValueBuilding = 0x02;
-constexpr auto kPropertyExemplarTypeValueLotConfig = 0x10;
-constexpr auto kPropertyExemplarName = 0x00000020;
-constexpr auto kPropertyBuildingOccupantGroups = 0xAA1DD396;
+constexpr auto kExemplarTypeBuilding = "Buildings";
+constexpr auto kExemplarTypeLotConfig = "LotConfigurations";
+constexpr auto kExemplarName = "Exemplar Name";
+constexpr auto kExemplarId = "Exemplar ID";
+constexpr auto kOccupantGroups = "OccupantGroups";
+constexpr auto kLotConfigSize = "LotConfigPropertySize";
+constexpr auto kLotConfigObject = "LotConfigPropertyLotObject";
+constexpr auto kLotConfigObjectTypeBuilding = kZero;
+constexpr auto kGrowthStage = "Growth Stage";
+constexpr auto kCapacity = "Capacity Satisfied";
+constexpr auto kIconResourceKey = "Icon Resource Key";
+constexpr auto kItemIcon = "Item Icon";
+constexpr auto kTypeIdPNG = 0x856DDBACu;
 
 enum class ExemplarType {
     Building,   // Exemplar Type 0x02
@@ -36,11 +46,11 @@ class ExemplarParser {
 public:
     explicit ExemplarParser(const PropertyMapper& mapper);
 
-    std::optional<ExemplarType> GetExemplarType(const Exemplar::Record& exemplar);
+    [[nodiscard]] std::optional<ExemplarType> GetExemplarType(const Exemplar::Record& exemplar) const;
 
-    std::optional<ParsedBuildingExemplar> ParseBuilding(const DBPF::Reader& reader, const DBPF::IndexEntry& entry);
+    std::optional<ParsedBuildingExemplar> ParseBuilding(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const;
 
-    std::optional<ParsedLotConfigExemplar> ParseLotConfig(const DBPF::Reader& reader, const DBPF::IndexEntry& entry);
+    std::optional<ParsedLotConfigExemplar> ParseLotConfig(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const;
 
 private:
     const PropertyMapper& propertyMapper_;
