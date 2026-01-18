@@ -49,6 +49,7 @@ add_subdirectory(vendor/DBPFKit)
 add_subdirectory(src/shared)
 add_subdirectory(src/dll)
 add_subdirectory(src/app)
+add_subdirectory(tools)
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/docs")
     install(DIRECTORY docs/

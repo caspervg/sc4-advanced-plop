@@ -40,7 +40,8 @@ public:
     [[nodiscard]] auto pluginLocator() const -> const PluginLocator&;
 
     // Load an exemplar by TGI using cached readers
-    [[nodiscard]] auto loadExemplar(const DBPF::Tgi& tgi) const -> ParseExpected<Exemplar::Record>;
+    // Returns a pointer to the cached exemplar (stays valid until shutdown)
+    [[nodiscard]] auto loadExemplar(const DBPF::Tgi& tgi) const -> ParseExpected<const Exemplar::Record*>;
 
     // Load raw entry data by TGI using cached readers
     [[nodiscard]] auto loadEntryData(const DBPF::Tgi& tgi) const -> std::optional<std::vector<uint8_t>>;
@@ -72,6 +73,8 @@ private:
     std::unordered_map<uint64_t, std::vector<DBPF::Tgi>> typeInstanceToTgis_;
 
     // Cache of DBPF readers (one per file) for fast exemplar loading
-    // Mutable to allow caching from const methods
     mutable std::unordered_map<std::filesystem::path, std::unique_ptr<DBPF::Reader>> readerCache_;
+
+    // Cache of loaded exemplars
+    mutable std::unordered_map<DBPF::Tgi, Exemplar::Record, DBPF::TgiHash> exemplarCache_;
 };

@@ -62,7 +62,7 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
         // While indexing happens in background, load the property mapper
         logger.info("Loading property mapper...");
         PropertyMapper propertyMapper;
-        bool mapperLoaded = false;
+        auto mapperLoaded = false;
 
         // Try common locations for the property mapper XML
         std::vector<fs::path> mapperLocations{
@@ -113,10 +113,7 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
 
         uint32_t buildingsFound = 0;
         uint32_t lotsFound = 0;
-        uint32_t exemplarsProcessed = 0;
         uint32_t parseErrors = 0;
-        uint32_t exemplarsWithParents = 0;
-        uint32_t failedTypeLoads = 0;
         std::set<uint32_t> missingBuildingIds;
 
         ExemplarParser parser(propertyMapper, &indexService);
@@ -140,10 +137,11 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
             }
         }
 
-        logger.info("Exemplars are distributed across {} files", fileToExemplarTgis.size());
-
-        // Process file by file - use cached readers from index service
         size_t filesProcessed = 0;
+
+        // Store lot config TGIs for second pass
+        std::vector<std::pair<fs::path, DBPF::Tgi>> lotConfigTgis;
+
         for (const auto& [filePath, tgis] : fileToExemplarTgis) {
             try {
                 // Get cached reader from index service
@@ -157,22 +155,14 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
 
                 // Process all exemplars in this file
                 for (const auto& tgi : tgis) {
-                    exemplarsProcessed++;
-
                     try {
                         auto exemplarResult = reader->LoadExemplar(tgi);
                         if (!exemplarResult.has_value()) {
                             continue;
                         }
 
-                        // Track exemplars with parent cohorts
-                        if (exemplarResult->parent.instance != 0) {
-                            exemplarsWithParents++;
-                        }
-
                         auto exemplarType = parser.getExemplarType(*exemplarResult);
                         if (!exemplarType) {
-                            failedTypeLoads++;
                             continue;
                         }
 
@@ -181,25 +171,11 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
                             if (building) {
                                 buildingMap[tgi.instance] = *building;
                                 buildingsFound++;
-                                logger.debug("  Building: {} (0x{:08X})", building->name, tgi.instance);
+                                logger.trace("  Building: {} (0x{:08X})", building->name, tgi.instance);
                             }
                         } else if (*exemplarType == ExemplarType::LotConfig) {
-                            auto parsedLot = parser.parseLotConfig(*exemplarResult, tgi, buildingMap);
-                            if (parsedLot) {
-                                // Get building for this lot
-                                auto buildingIt = buildingMap.find(parsedLot->buildingInstanceId);
-                                if (buildingIt != buildingMap.end()) {
-                                    Building building = parser.buildingFromParsed(buildingIt->second);
-                                    Lot lot = parser.lotFromParsed(*parsedLot, building);
-                                    logger.debug("  Lot: {} (0x{:08X})", lot.name, lot.instanceId.get());
-                                    allLots.push_back(lot);
-                                    lotsFound++;
-                                } else {
-                                    logger.debug("  Lot {} references unknown building 0x{:08X}",
-                                               parsedLot->name, parsedLot->buildingInstanceId);
-                                    missingBuildingIds.insert(parsedLot->buildingInstanceId);
-                                }
-                            }
+                            // Queue for second pass
+                            lotConfigTgis.emplace_back(filePath, tgi);
                         }
 
                     } catch (const std::exception& error) {
@@ -213,8 +189,8 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
 
                 // Log progress periodically
                 if (filesProcessed % 100 == 0) {
-                    logger.info("  Processed {}/{} files ({} buildings, {} lots so far)",
-                               filesProcessed, fileToExemplarTgis.size(), buildingsFound, lotsFound);
+                    logger.info("  Processed {}/{} files ({} buildings found so far)",
+                               filesProcessed, fileToExemplarTgis.size(), buildingsFound);
                 }
 
             } catch (const std::exception& error) {
@@ -222,23 +198,62 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
             }
         }
 
-        logger.info("Processing summary:");
-        logger.info("  Total exemplars processed: {}", exemplarsProcessed);
-        logger.info("  Exemplars with parent cohorts: {}", exemplarsWithParents);
-        logger.info("  Failed to determine type: {}", failedTypeLoads);
-        logger.info("  Buildings parsed: {}", buildingsFound);
-        logger.info("  Lots parsed: {}", lotsFound);
-        logger.info("  Unidentified exemplars: {}", exemplarsProcessed - buildingsFound - lotsFound - failedTypeLoads);
+        // Build family-to-buildings map for resolving growable lot references
+        std::unordered_map<uint32_t, std::vector<uint32_t>> familyToBuildingsMap;
+        for (const auto& [instanceId, building] : buildingMap) {
+            for (uint32_t familyId : building.familyIds) {
+                familyToBuildingsMap[familyId].push_back(instanceId);
+            }
+        }
+
+        for (const auto& [filePath, tgi] : lotConfigTgis) {
+            try {
+                auto* reader = indexService.getReader(filePath);
+                if (!reader) {
+                    continue;
+                }
+
+                auto exemplarResult = reader->LoadExemplar(tgi);
+                if (!exemplarResult.has_value()) {
+                    continue;
+                }
+
+                auto parsedLot = parser.parseLotConfig(*exemplarResult, tgi, buildingMap, familyToBuildingsMap);
+                if (parsedLot) {
+                    // Get building for this lot
+                    auto buildingIt = buildingMap.find(parsedLot->buildingInstanceId);
+                    if (buildingIt != buildingMap.end()) {
+                        Building building = parser.buildingFromParsed(buildingIt->second);
+                        Lot lot = parser.lotFromParsed(*parsedLot, building);
+                        if (parsedLot->isFamilyReference) {
+                            logger.trace("  Lot: {} (0x{:08X}) [family 0x{:08X} -> building 0x{:08X}]",
+                                       lot.name, lot.instanceId.get(),
+                                       parsedLot->buildingFamilyId, parsedLot->buildingInstanceId);
+                        } else {
+                            logger.trace("  Lot: {} (0x{:08X})", lot.name, lot.instanceId.get());
+                        }
+                        allLots.push_back(lot);
+                        lotsFound++;
+                    } else {
+                        if (parsedLot->isFamilyReference) {
+                            logger.warn("  Lot {} references family 0x{:08X} but resolved building 0x{:08X} not found",
+                                       parsedLot->name, parsedLot->buildingFamilyId, parsedLot->buildingInstanceId);
+                        } else {
+                            logger.warn("  Lot {} references unknown building 0x{:08X}",
+                                       parsedLot->name, parsedLot->buildingInstanceId);
+                        }
+                        missingBuildingIds.insert(parsedLot->buildingInstanceId);
+                    }
+                }
+            } catch (const std::exception& error) {
+                logger.debug("Error processing lot config TGI {}/{}/{}: {}",
+                           tgi.type, tgi.group, tgi.instance, error.what());
+                parseErrors++;
+            }
+        }
 
         if (!missingBuildingIds.empty()) {
-            logger.warn("  Lots referencing missing buildings: {} unique IDs", missingBuildingIds.size());
-            logger.debug("    Sample missing building IDs:");
-            int count = 0;
-            for (auto id : missingBuildingIds) {
-                if (count++ < 20) {
-                    logger.debug("      0x{:08X}", id);
-                }
-            }
+            logger.warn("Missing building references for {} lots:", missingBuildingIds.size());
         }
 
         logger.info("Scan complete: {} buildings, {} lots, {} parse errors",
@@ -267,8 +282,6 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
 
         // Shutdown the indexing service
         indexService.shutdown();
-        logger.info("Index service shutdown");
-
     } catch (const std::exception& error) {
         logger.error("Error during exemplar scan: {}", error.what());
     }
@@ -280,6 +293,7 @@ int main(int argc, char* argv[])
 {
     try {
         auto logger = spdlog::stdout_color_mt("lotplop-cli");
+        logger->set_level(spdlog::level::debug);
         spdlog::set_pattern("[%H:%M:%S] [%^%l%$] %v");
         logger->info("SC4AdvancedLotPlop CLI {}", SC4_ADVANCED_LOT_PLOP_VERSION);
 
