@@ -3,6 +3,8 @@
 #include "DBPFReader.h"
 #include "ExemplarReader.h"
 #include "PropertyMapper.hpp"
+#include "services/DbpfIndexService.hpp"
+#include "../shared/entities.hpp"
 
 constexpr auto kZero = 0x0000000u;
 constexpr auto kExemplarType = "Exemplar Type";
@@ -13,6 +15,8 @@ constexpr auto kExemplarId = "Exemplar ID";
 constexpr auto kOccupantGroups = "OccupantGroups";
 constexpr auto kLotConfigSize = "LotConfigPropertySize";
 constexpr auto kLotConfigObject = "LotConfigPropertyLotObject";
+constexpr auto kPropertyLotObjectsStart = 0x88EDC900u;
+constexpr auto kPropertyLotObjectsEnd = 0x88EDCFF0u;
 constexpr auto kLotConfigObjectTypeBuilding = kZero;
 constexpr auto kGrowthStage = "Growth Stage";
 constexpr auto kCapacity = "Capacity Satisfied";
@@ -29,6 +33,7 @@ struct ParsedBuildingExemplar {
     DBPF::Tgi tgi;
     std::string name;
     std::vector<uint32_t> occupantGroups;
+    std::optional<DBPF::Tgi> iconTgi;
     // TODO other building props
 };
 
@@ -44,12 +49,30 @@ struct ParsedLotConfigExemplar {
 
 class ExemplarParser {
 public:
-    explicit ExemplarParser(const PropertyMapper& mapper);
+    explicit ExemplarParser(const PropertyMapper& mapper, const DbpfIndexService* indexService = nullptr);
 
     [[nodiscard]] std::optional<ExemplarType> getExemplarType(const Exemplar::Record& exemplar) const;
-    [[nodiscard]] std::optional<ParsedBuildingExemplar> parseBuilding(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const;
-    [[nodiscard]] std::optional<ParsedLotConfigExemplar> parseLotConfig(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const;
+    [[nodiscard]] std::optional<ParsedBuildingExemplar> parseBuilding(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi) const;
+    [[nodiscard]] std::optional<ParsedLotConfigExemplar> parseLotConfig(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi, const std::unordered_map<uint32_t, ParsedBuildingExemplar>& buildingMap) const;
+
+    // Conversion functions to canonical entities
+    [[nodiscard]] Building buildingFromParsed(const ParsedBuildingExemplar& parsed) const;
+    [[nodiscard]] Lot lotFromParsed(const ParsedLotConfigExemplar& parsed, const Building& building) const;
+
+    // Cohort-aware property lookup - searches exemplar and parent cohorts recursively
+    [[nodiscard]] const Exemplar::Property* findProperty(
+        const Exemplar::Record& exemplar,
+        uint32_t propertyId
+    ) const;
 
 private:
+    // Helper to recursively find properties in exemplar and parent cohorts
+    [[nodiscard]] const Exemplar::Property* findPropertyRecursive(
+        const Exemplar::Record& exemplar,
+        uint32_t propertyId,
+        std::unordered_set<uint32_t>& visitedCohorts
+    ) const;
+
     const PropertyMapper& propertyMapper_;
+    const DbpfIndexService* indexService_;
 };

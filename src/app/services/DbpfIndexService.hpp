@@ -2,12 +2,16 @@
 #include <atomic>
 #include <filesystem>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 #include "PluginLocator.hpp"
 #include "TGI.h"
+#include "DBPFReader.h"
+#include "ExemplarReader.h"
 
 struct ScanProgress {
     size_t totalFiles = 0;
@@ -28,10 +32,18 @@ public:
 
     [[nodiscard]] auto isRunning() const -> bool;
     [[nodiscard]] auto snapshot() const -> ScanProgress;
-    [[nodiscard]] auto tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::filesystem::path, DBPF::TgiHash>&;
+    [[nodiscard]] auto tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash>&;
     [[nodiscard]] auto typeInstanceIndex() const -> const std::unordered_map<uint64_t, std::vector<DBPF::Tgi>>&;
+    auto typeIndex() const -> const std::unordered_map<uint32_t, std::vector<DBPF::Tgi>>&;
+    auto typeIndex(uint32_t type) -> std::vector<DBPF::Tgi>;
     [[nodiscard]] auto dbpfFiles() const -> const std::vector<std::filesystem::path>&;
     [[nodiscard]] auto pluginLocator() const -> const PluginLocator&;
+
+    // Load an exemplar by TGI using cached readers
+    [[nodiscard]] auto loadExemplar(const DBPF::Tgi& tgi) const -> ParseExpected<Exemplar::Record>;
+
+    // Get or create a cached reader for a specific file
+    [[nodiscard]] auto getReader(const std::filesystem::path& filePath) const -> DBPF::Reader*;
 
 private:
     auto worker_() -> void;
@@ -40,7 +52,7 @@ private:
 private:
     PluginLocator locator_;
 
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
     std::thread workerThread_;
     std::atomic_bool running_{false};
     std::atomic_bool stop_{false};
@@ -53,5 +65,10 @@ private:
     std::string currentFile_;
     std::vector<std::filesystem::path> files_;
     std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash> tgiToFiles_;
+    std::unordered_map<uint32_t, std::vector<DBPF::Tgi>> typeToTgis_;
     std::unordered_map<uint64_t, std::vector<DBPF::Tgi>> typeInstanceToTgis_;
+
+    // Cache of DBPF readers (one per file) for fast exemplar loading
+    // Mutable to allow caching from const methods
+    mutable std::unordered_map<std::filesystem::path, std::unique_ptr<DBPF::Reader>> readerCache_;
 };
