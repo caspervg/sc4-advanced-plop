@@ -1,52 +1,11 @@
 #include "LotPlopPanel.hpp"
-#include "spdlog/spdlog.h"
+
+#include "imgui_impl_win32.h"
 #include "rfl/visit.hpp"
+#include "spdlog/spdlog.h"
 
 LotPlopPanel::LotPlopPanel(SC4AdvancedLotPlopDirector* director, cIGZImGuiService* imguiService)
     : director_(director), imguiService_(imguiService) {}
-
-void LotPlopPanel::LoadIconTexture_(uint32_t buildingInstanceId, const Building& building) {
-    if (!imguiService_ || !building.thumbnail.has_value()) {
-        return;
-    }
-
-    // Already loaded?
-    if (iconCache_.find(buildingInstanceId) != iconCache_.end()) {
-        return;
-    }
-
-    // Extract RGBA32 data from the thumbnail variant
-    const auto& thumbnail = building.thumbnail.value();
-
-    // Use rfl::visit to handle the TaggedUnion
-    rfl::visit([&](const auto& variant) {
-        const auto& data = variant.data;
-        const uint32_t width = variant.width;
-        const uint32_t height = variant.height;
-
-        if (data.empty() || width == 0 || height == 0) {
-            return;
-        }
-
-        // Verify data size matches expected RGBA32 size
-        const size_t expectedSize = static_cast<size_t>(width) * height * 4;
-        if (data.size() != expectedSize) {
-            spdlog::warn("Icon data size mismatch for building 0x{:08X}: expected {}, got {}",
-                buildingInstanceId, expectedSize, data.size());
-            return;
-        }
-
-        // Create ImGui texture directly from pre-decoded RGBA32 data
-        ImGuiTexture texture;
-        if (texture.Create(imguiService_, width, height, data.data())) {
-            iconCache_.emplace(buildingInstanceId, std::move(texture));
-            spdlog::debug("Loaded icon for building 0x{:08X} ({}x{})",
-                buildingInstanceId, width, height);
-        } else {
-            spdlog::warn("Failed to create texture for building 0x{:08X}", buildingInstanceId);
-        }
-    }, thumbnail);
-}
 
 void LotPlopPanel::OnRender() {
     ImGui::Begin("Advanced Lot Plop", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
@@ -71,12 +30,11 @@ void LotPlopPanel::OnRender() {
 
     // Lazy-load textures on first render (limit to avoid stalling)
     if (!texturesLoaded_ && imguiService_) {
-        constexpr size_t maxLoadPerFrame = 50;
         size_t loaded = 0;
         for (const auto& lot : lots) {
-            if (loaded >= maxLoadPerFrame) break;
+            if (loaded >= kMaxIconsToLoadPerFrame) break;
             if (lot.building.thumbnail.has_value() &&
-                iconCache_.find(lot.building.instanceId.value()) == iconCache_.end()) {
+                !iconCache_.contains(lot.building.instanceId.value())) {
                 LoadIconTexture_(lot.building.instanceId.value(), lot.building);
                 loaded++;
             }
@@ -147,4 +105,47 @@ void LotPlopPanel::OnRender() {
     }
 
     ImGui::End();
+}
+
+void LotPlopPanel::LoadIconTexture_(uint32_t buildingInstanceId, const Building& building) {
+    if (!imguiService_ || !building.thumbnail.has_value()) {
+        return;
+    }
+
+    // Already loaded?
+    if (iconCache_.contains(buildingInstanceId)) {
+        return;
+    }
+
+    // Extract RGBA32 data from the thumbnail variant
+    const auto& thumbnail = building.thumbnail.value();
+
+    // Use rfl::visit to handle the TaggedUnion
+    rfl::visit([&](const auto& variant) {
+        const auto& data = variant.data;
+        const uint32_t width = variant.width;
+        const uint32_t height = variant.height;
+
+        if (data.empty() || width == 0 || height == 0) {
+            return;
+        }
+
+        // Verify data size matches expected RGBA32 size
+        const size_t expectedSize = static_cast<size_t>(width) * height * 4;
+        if (data.size() != expectedSize) {
+            spdlog::warn("Icon data size mismatch for building 0x{:08X}: expected {}, got {}",
+                         buildingInstanceId, expectedSize, data.size());
+            return;
+        }
+
+        // Create ImGui texture directly from pre-decoded RGBA32 data
+        ImGuiTexture texture;
+        if (texture.Create(imguiService_, width, height, data.data())) {
+            iconCache_.emplace(buildingInstanceId, std::move(texture));
+            spdlog::debug("Loaded icon for building 0x{:08X} ({}x{})",
+                          buildingInstanceId, width, height);
+        } else {
+            spdlog::warn("Failed to create texture for building 0x{:08X}", buildingInstanceId);
+        }
+    }, thumbnail);
 }
