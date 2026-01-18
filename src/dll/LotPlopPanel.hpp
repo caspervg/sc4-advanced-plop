@@ -1,8 +1,9 @@
 #pragma once
+#include <unordered_map>
 #include "SC4AdvancedLotPlopDirector.hpp"
 #include "public/ImGuiTexture.h"
-#include <unordered_map>
 
+constexpr auto kMaxIconsToLoadPerFrame = 50;
 
 class LotPlopPanel final : public ImGuiPanel {
 public:

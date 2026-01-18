@@ -70,7 +70,7 @@ namespace {
             );
         }
 
-        // Swap R and B channels (RGBA -> BGRA) for DirectX compatibility
+        // Swap R and B channels (RGBA -> BGRA) for DirectX7 compatibility
         for (size_t i = 0; i < croppedDataSize; i += 4) {
             std::swap(result.pixels[i], result.pixels[i + 2]);  // Swap R and B
         }
