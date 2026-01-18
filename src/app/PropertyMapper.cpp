@@ -20,7 +20,7 @@ bool PropertyMapper::loadFromXml(const std::filesystem::path& xmlPath) {
             if (!propOptionList.empty()) {
                 for (const auto& option : propOptionList) {
                     uint32_t optionValue = parsePropertyId_(option.value().get());
-                    std::string optionLabel = option.label().get();
+                    std::string optionLabel = option.name().get();
                     propOptionMap[optionLabel] = optionValue;
                 }
                 info.optionNames_ = propOptionMap;

@@ -1,6 +1,9 @@
 #include "DbpfIndexService.hpp"
-#include "../../../vendor/DBPFKit/src/DBPFReader.h"
+
 #include <spdlog/spdlog.h>
+
+#include "DBPFReader.h"
+#include "ParseTypes.h"
 
 DbpfIndexService::DbpfIndexService(const PluginLocator& locator) : locator_(locator) {}
 
@@ -19,7 +22,7 @@ void DbpfIndexService::start() {
     errorCount_ = 0;
 
     {
-        std::lock_guard lock(mutex_);
+        std::unique_lock lock(mutex_);
         currentFile_.clear();
         files_.clear();
         tgiToFiles_.clear();
@@ -43,7 +46,7 @@ auto DbpfIndexService::isRunning() const -> bool {
 }
 
 auto DbpfIndexService::snapshot() const -> ScanProgress {
-    std::lock_guard lock(mutex_);
+    std::shared_lock lock(mutex_);
     return ScanProgress{
         .totalFiles = totalFiles_,
         .processedFiles = processedFiles_,
@@ -54,15 +57,27 @@ auto DbpfIndexService::snapshot() const -> ScanProgress {
     };
 }
 
-auto DbpfIndexService::tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::filesystem::path, DBPF::TgiHash>& {
-    // Note: This assumes tgiToFiles_ maps single file per TGI
-    // For actual multi-file mapping, would need to refactor
-    static const std::unordered_map<DBPF::Tgi, std::filesystem::path, DBPF::TgiHash> empty;
-    return empty;
+auto DbpfIndexService::tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash>& {
+    std::shared_lock lock(mutex_);
+    return tgiToFiles_;
 }
 
 auto DbpfIndexService::typeInstanceIndex() const -> const std::unordered_map<uint64_t, std::vector<DBPF::Tgi>>& {
+    std::shared_lock lock(mutex_);
     return typeInstanceToTgis_;
+}
+
+auto DbpfIndexService::typeIndex() const -> const std::unordered_map<uint32_t, std::vector<DBPF::Tgi>>& {
+    std::shared_lock lock(mutex_);
+    return typeToTgis_;
+}
+
+auto DbpfIndexService::typeIndex(const uint32_t type) -> std::vector<DBPF::Tgi> {
+    std::shared_lock lock(mutex_);
+    if (typeToTgis_.contains(type)) {
+        return typeToTgis_.at(type);
+    }
+    return {};
 }
 
 auto DbpfIndexService::dbpfFiles() const -> const std::vector<std::filesystem::path>& {
@@ -78,7 +93,7 @@ void DbpfIndexService::worker_() {
         auto pluginFiles = locator_.ListDbpfFiles();
 
         {
-            std::lock_guard lock(mutex_);
+            std::unique_lock lock(mutex_);
             files_ = pluginFiles;
             totalFiles_ = pluginFiles.size();
         }
@@ -89,15 +104,15 @@ void DbpfIndexService::worker_() {
             }
 
             {
-                std::lock_guard lock(mutex_);
+                std::unique_lock lock(mutex_);
                 currentFile_ = filePath.filename().string();
             }
 
             try {
                 DBPF::Reader reader;
                 if (!reader.LoadFile(filePath.string())) {
-                    errorCount_++;
-                    processedFiles_++;
+                    ++errorCount_;
+                    ++processedFiles_;
                     continue;
                 }
 
@@ -111,8 +126,9 @@ void DbpfIndexService::worker_() {
                     uint64_t typeInstanceKey = (static_cast<uint64_t>(entry.tgi.type) << 32) | entry.tgi.instance;
 
                     {
-                        std::lock_guard lock(mutex_);
+                        std::unique_lock lock(mutex_);
                         typeInstanceToTgis_[typeInstanceKey].push_back(entry.tgi);
+                        typeToTgis_[entry.tgi.type].push_back(entry.tgi);
                         tgiToFiles_[entry.tgi].push_back(filePath);
                     }
 
@@ -120,19 +136,19 @@ void DbpfIndexService::worker_() {
                 }
 
                 {
-                    std::lock_guard lock(mutex_);
+                    std::unique_lock lock(mutex_);
                     entriesIndexed_ += entriesCount;
-                    processedFiles_++;
+                    ++processedFiles_;
                 }
 
-            } catch (const std::exception& error) {
-                errorCount_++;
-                processedFiles_++;
+            } catch ([[maybe_unused]] const std::exception& error) {
+                ++errorCount_;
+                ++processedFiles_;
             }
         }
 
         {
-            std::lock_guard lock(mutex_);
+            std::unique_lock lock(mutex_);
             done_ = true;
             currentFile_.clear();
         }
@@ -146,4 +162,52 @@ void DbpfIndexService::worker_() {
 void DbpfIndexService::publishProgress_() {
     // Could be used to notify observers of progress
     // For now, kept simple - snapshots can be taken with snapshot()
+}
+
+DBPF::Reader* DbpfIndexService::getReader(const std::filesystem::path& filePath) const {
+    std::unique_lock lock(mutex_);
+
+    // Check if we already have a reader for this file
+    auto it = readerCache_.find(filePath);
+    if (it != readerCache_.end()) {
+        return it->second.get();
+    }
+
+    // Create a new reader and load the file
+    auto reader = std::make_unique<DBPF::Reader>();
+    if (!reader->LoadFile(filePath.string())) {
+        return nullptr;
+    }
+
+    // Cache it and return
+    auto* readerPtr = reader.get();
+    readerCache_[filePath] = std::move(reader);
+    return readerPtr;
+}
+
+ParseExpected<Exemplar::Record> DbpfIndexService::loadExemplar(const DBPF::Tgi& tgi) const {
+    // Find which file(s) contain this TGI
+    std::shared_lock readLock(mutex_);
+    auto tgiIt = tgiToFiles_.find(tgi);
+    if (tgiIt == tgiToFiles_.end() || tgiIt->second.empty()) {
+        return Fail("TGI not found in index");
+    }
+
+    const auto& filePaths = tgiIt->second;
+    readLock.unlock();
+
+    // Try to load from the first file that has it
+    for (const auto& filePath : filePaths) {
+        auto* reader = getReader(filePath);
+        if (!reader) {
+            continue;
+        }
+
+        auto exemplar = reader->LoadExemplar(tgi);
+        if (exemplar.has_value()) {
+            return exemplar;
+        }
+    }
+
+    return Fail("Failed to load exemplar from any file");
 }

@@ -4,11 +4,14 @@
 #include <iostream>
 #include <string_view>
 #include <vector>
+#include <set>
 #include <chrono>
 #include <thread>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+
+#include <fstream>
 
 #include "DBPFReader.h"
 #include "ExemplarParser.hpp"
@@ -16,6 +19,9 @@
 #include "services/PluginLocator.hpp"
 #include "services/DbpfIndexService.hpp"
 #include "../shared/index.hpp"
+#include "../shared/entities.hpp"
+
+#include <rfl/cbor.hpp>
 
 #ifndef SC4_ADVANCED_LOT_PLOP_VERSION
 #define SC4_ADVANCED_LOT_PLOP_VERSION "0.0.0"
@@ -27,30 +33,17 @@ namespace {
 
 PluginConfiguration GetDefaultPluginConfiguration()
 {
-#ifdef _WIN32
     const char* userProfile = std::getenv("USERPROFILE");
-    if (userProfile) {
+    const char* programFiles = std::getenv("PROGRAMFILES(x86)");
+    const auto gameRoot = fs::path(programFiles) / "SimCity 4 Deluxe Edition";
+    if (userProfile && programFiles) {
         return PluginConfiguration{
-            .gameRoot = fs::path(userProfile) / "Documents" / "SimCity 4",
-            .gamePluginsRoot = fs::path(userProfile) / "Documents" / "SimCity 4" / "Plugins",
+            .gameRoot = gameRoot,
+            .gamePluginsRoot = gameRoot / "Plugins",
             .userPluginsRoot = fs::path(userProfile) / "Documents" / "SimCity 4" / "Plugins"
         };
     }
-#endif
-
-    if (const char* home = std::getenv("HOME")) {
-        return PluginConfiguration{
-            .gameRoot = fs::path(home) / ".simcity4",
-            .gamePluginsRoot = fs::path(home) / ".simcity4" / "plugins",
-            .userPluginsRoot = fs::path(home) / ".simcity4" / "plugins"
-        };
-    }
-
-    return PluginConfiguration{
-        .gameRoot = fs::current_path(),
-        .gamePluginsRoot = fs::current_path(),
-        .userPluginsRoot = fs::current_path()
-    };
+    return PluginConfiguration{};
 }
 
 void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& logger)
@@ -61,30 +54,13 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
         // Create locator to discover plugin files
         PluginLocator locator(config);
 
-        // Create the index service to scan and index all plugins
+        // Create and start the index service immediately for parallel indexing
         DbpfIndexService indexService(locator);
         logger.info("Starting background indexing service...");
         indexService.start();
 
-        // Wait a bit for initial indexing
-        using namespace std::chrono_literals;
-        std::this_thread::sleep_for(500ms);
-
-        // Get the indexed DBPF files
-        const auto& pluginFiles = indexService.dbpfFiles();
-        logger.info("Found {} plugin files", pluginFiles.size());
-
-        if (pluginFiles.empty()) {
-            logger.warn("No plugin files found");
-            indexService.shutdown();
-            return;
-        }
-
-        uint32_t buildingsFound = 0;
-        uint32_t lotsFound = 0;
-        uint32_t parseErrors = 0;
-
-        // Try to load property mapping XML file for better exemplar parsing
+        // While indexing happens in background, load the property mapper
+        logger.info("Loading property mapper...");
         PropertyMapper propertyMapper;
         bool mapperLoaded = false;
 
@@ -109,64 +85,185 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config, spdlog::logger& 
             logger.warn("Could not load PropertyMapper XML - some features may be limited");
         }
 
-        ExemplarParser parser(propertyMapper);
+        // Wait for indexing to complete, logging progress periodically
+        logger.info("Waiting for indexing to complete...");
+        using namespace std::chrono_literals;
+        int logIntervalCount = 0;
+        while (true) {
+            auto progress = indexService.snapshot();
 
-        // Process each indexed plugin file
-        for (const auto& pluginFile : pluginFiles) {
-            try {
-                logger.info("Processing: {}", pluginFile.filename().string());
+            // Check if done
+            if (progress.done) {
+                break;
+            }
 
-                DBPF::Reader reader;
-                if (!reader.LoadFile(pluginFile.string())) {
-                    logger.warn("  Failed to load file");
-                    parseErrors++;
-                    continue;
-                }
+            std::this_thread::sleep_for(100ms);
 
-                const auto& index = reader.GetIndex();
-
-                // Iterate through all entries looking for Exemplars
-                // Exemplar type is 0x6534284A
-                for (const auto& entry : index) {
-                    if (entry.tgi.type != 0x6534284Au) {
-                        continue;
-                    }
-
-                    auto exemplarResult = reader.LoadExemplar(entry);
-                    if (!exemplarResult.has_value()) {
-                        continue;
-                    }
-
-                    auto exemplarType = parser.getExemplarType(*exemplarResult);
-                    if (!exemplarType) {
-                        continue;
-                    }
-
-                    if (*exemplarType == ExemplarType::Building) {
-                        auto building = parser.parseBuilding(reader, entry);
-                        if (building) {
-                            logger.info("  Building: {} (0x{:08X})", building->name, building->tgi.instance);
-                            buildingsFound++;
-                        }
-                    } else if (*exemplarType == ExemplarType::LotConfig) {
-                        auto lot = parser.parseLotConfig(reader, entry);
-                        if (lot) {
-                            logger.info("  Lot: {} ({}x{}, 0x{:08X})",
-                                       lot->name, lot->lotSize.first, lot->lotSize.second,
-                                       lot->tgi.instance);
-                            lotsFound++;
-                        }
-                    }
-                }
-
-            } catch (const std::exception& error) {
-                logger.warn("  Error processing file: {}", error.what());
-                parseErrors++;
+            // Log progress every 2 seconds
+            if (++logIntervalCount % 20 == 0) {
+                logger.info("  Indexing progress: {}/{} files processed, {} entries indexed",
+                           progress.processedFiles, progress.totalFiles, progress.entriesIndexed);
             }
         }
 
-        logger.info("Scan complete: {} buildings, {} lots, {} errors",
+        // Log final indexing results
+        auto finalProgress = indexService.snapshot();
+        logger.info("Indexing complete: {} files processed, {} entries indexed, {} errors",
+                   finalProgress.processedFiles, finalProgress.totalFiles, finalProgress.errorCount);
+
+        uint32_t buildingsFound = 0;
+        uint32_t lotsFound = 0;
+        uint32_t exemplarsProcessed = 0;
+        uint32_t parseErrors = 0;
+        uint32_t exemplarsWithParents = 0;
+        uint32_t failedTypeLoads = 0;
+        std::set<uint32_t> missingBuildingIds;
+
+        ExemplarParser parser(propertyMapper, &indexService);
+        std::vector<Lot> allLots;
+        std::unordered_map<uint32_t, ParsedBuildingExemplar> buildingMap;
+
+        // Use the index service to get all exemplars across all files
+        logger.info("Processing exemplars using type index...");
+        const auto& tgiIndex = indexService.tgiIndex();
+        const auto exemplarTgis = indexService.typeIndex(0x6534284Au);
+
+        logger.info("Found {} exemplars to process", exemplarTgis.size());
+
+        // Group exemplar TGIs by file for efficient batch processing
+        std::unordered_map<fs::path, std::vector<DBPF::Tgi>> fileToExemplarTgis;
+        for (const auto& tgi : exemplarTgis) {
+            const auto& filePaths = tgiIndex.at(tgi);
+            // Add this TGI to the first file that contains it
+            if (!filePaths.empty()) {
+                fileToExemplarTgis[filePaths[0]].push_back(tgi);
+            }
+        }
+
+        logger.info("Exemplars are distributed across {} files", fileToExemplarTgis.size());
+
+        // Process file by file - use cached readers from index service
+        size_t filesProcessed = 0;
+        for (const auto& [filePath, tgis] : fileToExemplarTgis) {
+            try {
+                // Get cached reader from index service
+                auto* reader = indexService.getReader(filePath);
+                if (!reader) {
+                    logger.warn("Failed to get reader for file: {}", filePath.string());
+                    continue;
+                }
+
+                logger.debug("Processing {} exemplars from {}", tgis.size(), filePath.filename().string());
+
+                // Process all exemplars in this file
+                for (const auto& tgi : tgis) {
+                    exemplarsProcessed++;
+
+                    try {
+                        auto exemplarResult = reader->LoadExemplar(tgi);
+                        if (!exemplarResult.has_value()) {
+                            continue;
+                        }
+
+                        // Track exemplars with parent cohorts
+                        if (exemplarResult->parent.instance != 0) {
+                            exemplarsWithParents++;
+                        }
+
+                        auto exemplarType = parser.getExemplarType(*exemplarResult);
+                        if (!exemplarType) {
+                            failedTypeLoads++;
+                            continue;
+                        }
+
+                        if (*exemplarType == ExemplarType::Building) {
+                            auto building = parser.parseBuilding(*exemplarResult, tgi);
+                            if (building) {
+                                buildingMap[tgi.instance] = *building;
+                                buildingsFound++;
+                                logger.debug("  Building: {} (0x{:08X})", building->name, tgi.instance);
+                            }
+                        } else if (*exemplarType == ExemplarType::LotConfig) {
+                            auto parsedLot = parser.parseLotConfig(*exemplarResult, tgi, buildingMap);
+                            if (parsedLot) {
+                                // Get building for this lot
+                                auto buildingIt = buildingMap.find(parsedLot->buildingInstanceId);
+                                if (buildingIt != buildingMap.end()) {
+                                    Building building = parser.buildingFromParsed(buildingIt->second);
+                                    Lot lot = parser.lotFromParsed(*parsedLot, building);
+                                    logger.debug("  Lot: {} (0x{:08X})", lot.name, lot.instanceId.get());
+                                    allLots.push_back(lot);
+                                    lotsFound++;
+                                } else {
+                                    logger.debug("  Lot {} references unknown building 0x{:08X}",
+                                               parsedLot->name, parsedLot->buildingInstanceId);
+                                    missingBuildingIds.insert(parsedLot->buildingInstanceId);
+                                }
+                            }
+                        }
+
+                    } catch (const std::exception& error) {
+                        logger.debug("Error processing TGI {}/{}/{}: {}",
+                                   tgi.type, tgi.group, tgi.instance, error.what());
+                        parseErrors++;
+                    }
+                }
+
+                filesProcessed++;
+
+                // Log progress periodically
+                if (filesProcessed % 100 == 0) {
+                    logger.info("  Processed {}/{} files ({} buildings, {} lots so far)",
+                               filesProcessed, fileToExemplarTgis.size(), buildingsFound, lotsFound);
+                }
+
+            } catch (const std::exception& error) {
+                logger.warn("Error processing file {}: {}", filePath.filename().string(), error.what());
+            }
+        }
+
+        logger.info("Processing summary:");
+        logger.info("  Total exemplars processed: {}", exemplarsProcessed);
+        logger.info("  Exemplars with parent cohorts: {}", exemplarsWithParents);
+        logger.info("  Failed to determine type: {}", failedTypeLoads);
+        logger.info("  Buildings parsed: {}", buildingsFound);
+        logger.info("  Lots parsed: {}", lotsFound);
+        logger.info("  Unidentified exemplars: {}", exemplarsProcessed - buildingsFound - lotsFound - failedTypeLoads);
+
+        if (!missingBuildingIds.empty()) {
+            logger.warn("  Lots referencing missing buildings: {} unique IDs", missingBuildingIds.size());
+            logger.debug("    Sample missing building IDs:");
+            int count = 0;
+            for (auto id : missingBuildingIds) {
+                if (count++ < 20) {
+                    logger.debug("      0x{:08X}", id);
+                }
+            }
+        }
+
+        logger.info("Scan complete: {} buildings, {} lots, {} parse errors",
                    buildingsFound, lotsFound, parseErrors);
+
+        // Export lot config data to CBOR file in user plugins directory
+        if (!allLots.empty()) {
+            try {
+                auto cborPath = config.userPluginsRoot / "lot_configs.cbor";
+                fs::create_directories(config.userPluginsRoot);
+
+                logger.info("Exporting {} lot configs to {}", allLots.size(), cborPath.string());
+
+                std::ofstream file(cborPath, std::ios::binary);
+                if (!file) {
+                    logger.error("Failed to open file for writing: {}", cborPath.string());
+                } else {
+                    rfl::cbor::write(allLots, file);
+                    file.close();
+                    logger.info("Successfully exported lot configs");
+                }
+            } catch (const std::exception& error) {
+                logger.error("Error exporting lot configs: {}", error.what());
+            }
+        }
 
         // Shutdown the indexing service
         indexService.shutdown();
@@ -190,6 +287,8 @@ int main(int argc, char* argv[])
         args::HelpFlag helpFlag(parser, "help", "Show this help message", {'h', "help"});
         args::Flag versionFlag(parser, "version", "Print version", {"version"});
         args::Flag scanFlag(parser, "scan", "Scan plugins and extract exemplars", {"scan"});
+        args::ValueFlag<std::string> gameFlag(parser, "path", "Game root directory (plugins will be in {path}/Plugins)", {"game"});
+        args::ValueFlag<std::string> pluginsFlag(parser, "path", "User plugins directory", {"plugins"});
 
         try {
             parser.ParseCLI(argc, argv);
@@ -211,6 +310,16 @@ int main(int argc, char* argv[])
 
         if (scanFlag) {
             auto config = GetDefaultPluginConfiguration();
+
+            // Override with command-line arguments if provided
+            if (gameFlag) {
+                config.gameRoot = args::get(gameFlag);
+                config.gamePluginsRoot = config.gameRoot / "Plugins";
+            }
+            if (pluginsFlag) {
+                config.userPluginsRoot = args::get(pluginsFlag);
+            }
+
             logger->info("Using plugin configuration:");
             logger->info("  Game Root: {}", config.gameRoot.string());
             logger->info("  Game Plugins: {}", config.gamePluginsRoot.string());
@@ -222,7 +331,17 @@ int main(int argc, char* argv[])
 
         // Default behavior - show plugin paths
         auto config = GetDefaultPluginConfiguration();
-        logger->info("Default plugin directories:");
+
+        // Override with command-line arguments if provided
+        if (gameFlag) {
+            config.gameRoot = args::get(gameFlag);
+            config.gamePluginsRoot = config.gameRoot / "Plugins";
+        }
+        if (pluginsFlag) {
+            config.userPluginsRoot = args::get(pluginsFlag);
+        }
+
+        logger->info("Plugin directories:");
         logger->info("  Game Root: {}", config.gameRoot.string());
         logger->info("  Game Plugins: {}", config.gamePluginsRoot.string());
         logger->info("  User Plugins: {}", config.userPluginsRoot.string());

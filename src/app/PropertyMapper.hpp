@@ -12,7 +12,7 @@ using BoolLiteral = rfl::Literal<"Y", "N">;
 // XML structure for <OPTION Value="..." Name="..."/>
 struct PropertyOption {
     rfl::Rename<"Value", rfl::Attribute<std::string>> value;
-    rfl::Rename<"Label", rfl::Attribute<std::string>> label;
+    rfl::Rename<"Name", rfl::Attribute<std::string>> name;
 };
 
 struct PropertyDefinition {
@@ -21,7 +21,7 @@ struct PropertyDefinition {
     rfl::Rename<"Type", rfl::Attribute<std::string>> type;
 
     rfl::Rename<"Count", rfl::Attribute<std::optional<std::string>>> count;
-    rfl::Rename<"ShowAsHex", rfl::Attribute<BoolLiteral>> showAsHex;
+    std::optional<rfl::Rename<"ShowAsHex", rfl::Attribute<BoolLiteral>>> showAsHex;
     rfl::Rename<"Default", rfl::Attribute<std::optional<std::string>>> defaultValue;
 
     rfl::Rename<"HELP", std::optional<std::string>> helpText;

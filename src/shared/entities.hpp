@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <unordered_set>
+#include <optional>
 
 #include "rfl/Bytestring.hpp"
 #include "rfl/Hex.hpp"
@@ -29,7 +30,7 @@ struct Building {
 
     std::unordered_set<uint32_t> occupantGroups;
 
-    Thumbnail thumbnail;
+    std::optional<Thumbnail> thumbnail;
 };
 
 struct Lot {

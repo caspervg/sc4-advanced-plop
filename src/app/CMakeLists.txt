@@ -25,6 +25,7 @@ target_link_libraries(${APP_NAME} PRIVATE
     taywee::args
     DBPFKitLib
     pugixml::pugixml
+    jsoncons::jsoncons
 )
 
 # Copy DLLs to output directory for execution

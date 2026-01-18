@@ -1,35 +1,46 @@
 #include "ExemplarParser.hpp"
 
-ExemplarParser::ExemplarParser(const PropertyMapper& mapper)
-    : propertyMapper_(mapper) {}
+#include <unordered_set>
+
+#include "spdlog/spdlog.h"
+
+ExemplarParser::ExemplarParser(const PropertyMapper& mapper, const DbpfIndexService* indexService)
+    : propertyMapper_(mapper), indexService_(indexService) {}
 
 std::optional<ExemplarType> ExemplarParser::getExemplarType(const Exemplar::Record& exemplar) const {
-    auto* prop = exemplar.FindProperty(propertyMapper_.propertyId(kExemplarType).value());
+    auto propIdOpt = propertyMapper_.propertyId(kExemplarType);
+    if (!propIdOpt) {
+        return std::nullopt;
+    }
+
+    // Use cohort-aware property lookup
+    const auto* prop = findProperty(exemplar, *propIdOpt);
     if (!prop || prop->values.empty()) {
         // Unknown or empty Exemplar Type
         return std::nullopt;
     }
 
     const auto exemplarType = std::get<uint32_t>(prop->values.front());
-    if (exemplarType == propertyMapper_.propertyOptionId(kExemplarType, kExemplarTypeBuilding)) return ExemplarType::Building;
-    if (exemplarType == propertyMapper_.propertyOptionId(kExemplarType, kExemplarTypeLotConfig)) return ExemplarType::LotConfig;
+    auto buildingTypeOpt = propertyMapper_.propertyOptionId(kExemplarType, kExemplarTypeBuilding);
+    auto lotConfigTypeOpt = propertyMapper_.propertyOptionId(kExemplarType, kExemplarTypeLotConfig);
+
+    if (buildingTypeOpt && exemplarType == *buildingTypeOpt) return ExemplarType::Building;
+    if (lotConfigTypeOpt && exemplarType == *lotConfigTypeOpt) return ExemplarType::LotConfig;
     return std::nullopt;
 }
 
-std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const {
-    const auto exemplar = reader.LoadExemplar(entry);
-    if (!exemplar) return std::nullopt;
-
+std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi) const {
     ParsedBuildingExemplar parsedBuildingExemplar;
-    parsedBuildingExemplar.tgi = entry.tgi;
+    parsedBuildingExemplar.tgi = tgi;
 
-    if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kExemplarName).value())) {
+    // Use cohort-aware property lookup for all properties
+    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kExemplarName).value())) {
         if (prop->IsString() && !prop->values.empty()) {
             parsedBuildingExemplar.name = std::get<std::string>(prop->values.front());
         }
     }
 
-    if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kOccupantGroups).value())) {
+    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kOccupantGroups).value())) {
         if (prop->IsNumericList()) {
             for (const auto& val : prop->values) {
                 parsedBuildingExemplar.occupantGroups.push_back(std::get<uint32_t>(val));
@@ -37,23 +48,33 @@ std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const DBPF::
         }
     }
 
+    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kItemIcon).value())) {
+        if (!prop->values.empty()) {
+            const auto iconInstance = std::get<uint32_t>(prop->values.front());
+            parsedBuildingExemplar.iconTgi = DBPF::Tgi{
+                kTypeIdPNG,
+                kZero,
+                iconInstance
+            };
+        }
+    }
+
     return parsedBuildingExemplar;
 }
 
-std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const {
-    const auto exemplar = reader.LoadExemplar(entry);
-    if (!exemplar) return std::nullopt;
-
+std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi, const std::unordered_map<uint32_t, ParsedBuildingExemplar>& buildingMap) const {
     ParsedLotConfigExemplar parsedLotConfigExemplar;
-    parsedLotConfigExemplar.tgi = entry.tgi;
+    parsedLotConfigExemplar.tgi = tgi;
+    parsedLotConfigExemplar.buildingInstanceId = 0;
 
-    if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kExemplarName).value())) {
+    // Use cohort-aware property lookup for all properties
+    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kExemplarName).value())) {
         if (prop->IsString() && !prop->values.empty()) {
             parsedLotConfigExemplar.name = std::get<std::string>(prop->values.front());
         }
     }
 
-    if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kLotConfigSize).value())) {
+    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kLotConfigSize).value())) {
         if (prop->IsNumericList() && prop->values.size() >= 2) {
             auto width = std::get<uint8_t>(prop->values[0]);
             auto height = std::get<uint8_t>(prop->values[1]);
@@ -61,51 +82,139 @@ std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const DBPF
         }
     }
 
-    std::vector<Exemplar::Property> objectProperties{};
-    parsedLotConfigExemplar.buildingInstanceId = -1;
-    if (exemplar->FindProperties(propertyMapper_.propertyId(kLotConfigObject).value(), objectProperties)) {
-        for (auto const& prop : objectProperties) {
-            if (prop.values.size() >= 13) {
-                const auto objectType = std::get<uint32_t>(prop.values[0]);
+    // Scan through the lot objects property ID range to find the building
+    // Use cohort-aware lookup for lot object properties too
+    for (uint32_t propID = kPropertyLotObjectsStart;
+         propID <= kPropertyLotObjectsEnd;
+         propID++) {
+
+        if (auto* prop = findProperty(exemplar, propID)) {
+            if (prop->values.size() >= 13) {
+                const auto objectType = std::get<uint32_t>(prop->values[0]);
                 if (objectType == kLotConfigObjectTypeBuilding) {
-                    parsedLotConfigExemplar.buildingInstanceId = std::get<uint32_t>(prop.values[12]);
+                    parsedLotConfigExemplar.buildingInstanceId = std::get<uint32_t>(prop->values[12]);
                     break;
                 }
             }
         }
     }
-    if (parsedLotConfigExemplar.buildingInstanceId == -1) {
-        // We encountered a lot without a valid building instance, skipping!
+
+    if (!parsedLotConfigExemplar.buildingInstanceId) {
         return std::nullopt;
     }
 
-    const auto growthStagePropertyId = propertyMapper_.propertyId(kGrowthStage).value();
-    const auto growthStage = exemplar->GetScalar<uint8_t>(growthStagePropertyId);
-    if (growthStage.has_value()) {
-        parsedLotConfigExemplar.growthStage = growthStage.value();
+    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kGrowthStage).value())) {
+        if (!prop->values.empty()) {
+            parsedLotConfigExemplar.growthStage = std::get<uint8_t>(prop->values.front());
+        }
     }
 
-    // TODO: Implement map parsing for Capacity Satisfied (its a map)
-
-    if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kIconResourceKey).value())) {
-        // I'm fairly certain Icon Resource Key is not typically used in Lot Configurations, but adding it just in case
-        if (prop->values.size() >= 3) {
-            parsedLotConfigExemplar.iconTgi = DBPF::Tgi{
-                std::get<uint32_t>(prop->values[0]),
-                std::get<uint32_t>(prop->values[1]),
-                std::get<uint32_t>(prop->values[2])
-            };
-        }
-    } else {
-        const auto iconInstance = exemplar->GetScalar<uint32_t>(propertyMapper_.propertyId(kItemIcon).value());
-        if (iconInstance.has_value()) {
-            parsedLotConfigExemplar.iconTgi = DBPF::Tgi{
-                kTypeIdPNG,
-                kZero,
-                iconInstance.value()
-            };
+    // Look up the icon from the building exemplar using the building map
+    if (parsedLotConfigExemplar.buildingInstanceId != 0) {
+        auto it = buildingMap.find(parsedLotConfigExemplar.buildingInstanceId);
+        if (it != buildingMap.end()) {
+            const auto& building = it->second;
+            if (building.iconTgi.has_value()) {
+                parsedLotConfigExemplar.iconTgi = building.iconTgi;
+            }
         }
     }
 
     return parsedLotConfigExemplar;
+}
+
+Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed) const {
+    Building building;
+    building.instanceId = parsed.tgi.instance;
+    building.groupId = parsed.tgi.group;
+    building.name = parsed.name;
+    building.description = "";  // Not available from exemplar data
+    building.occupantGroups = std::unordered_set(parsed.occupantGroups.begin(), parsed.occupantGroups.end());
+    building.thumbnail = std::nullopt;  // Icon TGI available but not image data
+    return building;
+}
+
+Lot ExemplarParser::lotFromParsed(const ParsedLotConfigExemplar& parsed, const Building& building) const {
+    Lot lot;
+    lot.instanceId = parsed.tgi.instance;
+    lot.groupId = parsed.tgi.group;
+    lot.name = parsed.name;
+    lot.sizeX = parsed.lotSize.first;
+    lot.sizeZ = parsed.lotSize.second;
+    lot.minCapacity = parsed.capacity.has_value() ? parsed.capacity->first : 0;
+    lot.maxCapacity = parsed.capacity.has_value() ? parsed.capacity->second : 0;
+    lot.growthStage = parsed.growthStage.has_value() ? parsed.growthStage.value() : 0;
+    lot.building = building;
+    return lot;
+}
+
+const Exemplar::Property* ExemplarParser::findProperty(
+    const Exemplar::Record& exemplar,
+    uint32_t propertyId
+) const {
+    // If we have an index service, use recursive cohort following
+    if (indexService_) {
+        std::unordered_set<uint32_t> visitedCohorts;
+        return findPropertyRecursive(exemplar, propertyId, visitedCohorts);
+    }
+    // Otherwise, just direct lookup
+    return exemplar.FindProperty(propertyId);
+}
+
+const Exemplar::Property* ExemplarParser::findPropertyRecursive(
+    const Exemplar::Record& exemplar,
+    const uint32_t propertyId,
+    std::unordered_set<uint32_t>& visitedCohorts
+) const {
+    // Check the current exemplar for the property
+    if (auto* prop = exemplar.FindProperty(propertyId)) {
+        return prop;
+    }
+
+    // If no index service, can't look up parent cohorts across files
+    if (!indexService_) {
+        return nullptr;
+    }
+
+    // Parent cohort is stored in the exemplar header, not as a property
+    // Check if this exemplar has a parent cohort (instance != 0)
+    if (exemplar.parent.instance == 0) {
+        return nullptr;
+    }
+
+    // Prevent infinite loops
+    if (visitedCohorts.contains(exemplar.parent.instance)) {
+        return nullptr;
+    }
+    visitedCohorts.insert(exemplar.parent.instance);
+
+    // Use the index service to find the parent cohort across all DBPF files
+    const auto& tgiIndex = indexService_->tgiIndex();
+
+    // Use the full parent TGI (type, group, instance) from the exemplar header
+    const DBPF::Tgi& parentTgi = exemplar.parent;
+
+    auto tgiIt = tgiIndex.find(parentTgi);
+
+    if (tgiIt != tgiIndex.end()) {
+        // Use the index service's cached loader instead of opening files repeatedly
+        auto parentExemplar = indexService_->loadExemplar(parentTgi);
+        if (parentExemplar.has_value()) {
+            // Recursively search parent
+            spdlog::info("Searching parent cohort 0x{:08X}/0x{:08X}/0x{:08X} for property 0x{:08X}", parentTgi.type, parentTgi.group, parentTgi.instance, propertyId);
+            const auto prop = findPropertyRecursive(*parentExemplar, propertyId, visitedCohorts);
+            if (prop != nullptr) {
+                spdlog::info("Found property 0x{:08X} in parent cohort: {}", propertyId, prop->ToString());
+                return prop;
+            } else {
+                spdlog::info("Property 0x{:08X} not found in parent cohort", propertyId);
+            }
+        } else {
+            // Failed to load parent - log for debugging
+            spdlog::warn("Failed to load parent cohort 0x{:08X}/0x{:08X}/0x{:08X}: {}",
+                         parentTgi.type, parentTgi.group, parentTgi.instance, parentExemplar.error().message);
+        }
+    }
+
+    return nullptr;
 }
