@@ -4,7 +4,7 @@ set(SHARED_CORE_NAME SC4AdvancedLotPlopCore)
 add_library(${SHARED_CORE_NAME} INTERFACE)
 
 target_include_directories(${SHARED_CORE_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(${SHARED_CORE_NAME} INTERFACE reflectcpp)
+target_link_libraries(${SHARED_CORE_NAME} INTERFACE reflectcpp::reflectcpp)
 
 # Add tests subdirectory
 add_subdirectory(tests)

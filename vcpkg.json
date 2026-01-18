@@ -1,0 +1,36 @@
+{
+  "name" : "sc4-advanced-plop",
+  "version-string" : "1.0.0",
+  "builtin-baseline" : "66c0373dc7fca549e5803087b9487edfe3aca0a1",
+  "dependencies" : [ {
+    "name" : "args",
+    "version>=" : "6.4.7"
+  }, {
+    "name" : "ctre",
+    "version>=" : "3.10.0"
+  }, {
+    "name" : "fmt",
+    "version>=" : "12.1.0"
+  }, {
+    "name" : "imgui",
+    "version>=" : "1.91.9"
+  }, {
+    "name" : "reflectcpp",
+    "version>=" : "0.23.0"
+  }, {
+    "name" : "spdlog",
+    "version>=" : "1.17.0"
+  }, {
+    "name" : "vcpkg-cmake-config",
+    "version>=" : "2024-05-23"
+  }, {
+    "name" : "vcpkg-cmake",
+    "version>=" : "2024-04-23"
+  }, {
+    "name" : "yyjson",
+    "version>=" : "0.12.0"
+  }, {
+    "name" : "pugixml",
+    "version>=" : "1.15#1"
+  } ]
+}

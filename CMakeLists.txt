@@ -1,15 +1,24 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Force release runtime BEFORE project() call - this is critical for MSVC builds
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-    set(CMAKE_CXX_FLAGS_DEBUG "/MD /Zi /Ob0 /Od")
-    set(CMAKE_C_FLAGS_DEBUG "/MD /Zi /Ob0 /Od")
+# Enable vcpkg manifest mode BEFORE project()
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+set(VCPKG_MANIFEST_MODE ON CACHE BOOL "Enable vcpkg manifest mode")
+set(VCPKG_MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE STRING "vcpkg manifest directory")
+set(VCPKG_INSTALLED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed" CACHE STRING "vcpkg installed directory")
+
+# Set MSVC runtime BEFORE project() to ensure it applies to all targets
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
 endif()
+
+# Allow proper runtime library selection per configuration
+# Debug builds use /MDd (with debug DLLs from vcpkg debug/bin)
+# Release builds use /MD (with release DLLs from vcpkg bin)
+# This is handled automatically by CMAKE_MSVC_RUNTIME_LIBRARY per config
 
 project(SC4AdvancedLotPlop VERSION 1.0.0 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Enable testing
@@ -25,65 +34,18 @@ endif()
 if(MSVC)
     add_compile_options(/W4 /permissive-)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
-    
-    # Force release runtime for all configurations
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-    
-    # Override debug flags to use release runtime
-    set(CMAKE_CXX_FLAGS_DEBUG "/MD /Zi /Ob0 /Od /RTC1")
-    set(CMAKE_C_FLAGS_DEBUG "/MD /Zi /Ob0 /Od /RTC1")
-    
+
     # Enable debugging in release builds
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
     set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
 endif()
 
-set(REFLECTCPP_TOML ON)
-set(REFLECTCPP_PARQUET ON)
-set(REFLECTCPP_JSON ON)
-set(REFLECTCPP_CBOR ON)
-set(REFLECTCPP_XML ON)
-
-# Fetch jsoncons for reflect-cpp JSON support
-include(FetchContent)
-FetchContent_Declare(jsoncons
-    GIT_REPOSITORY https://github.com/danielaparker/jsoncons.git
-    GIT_TAG v1.4.0
-)
-FetchContent_MakeAvailable(jsoncons)
-
-# Set include directory for jsoncons before reflect-cpp uses it
-include_directories(${jsoncons_SOURCE_DIR}/include)
-
-set(SPDLOG_DIRS
-    "${CMAKE_SOURCE_DIR}/vendor/spdlog"
-    "${CMAKE_SOURCE_DIR}/vendor/sc4-imgui-service/vendor/spdlog"
-)
-
-set(SPDLOG_ADDED OFF)
-set(SPDLOG_SOURCE_DIR "")
-foreach(SPDLOG_CANDIDATE IN LISTS SPDLOG_DIRS)
-    if(EXISTS "${SPDLOG_CANDIDATE}/CMakeLists.txt")
-        add_subdirectory("${SPDLOG_CANDIDATE}")
-        set(SPDLOG_ADDED ON)
-        set(SPDLOG_SOURCE_DIR "${SPDLOG_CANDIDATE}")
-        break()
-    endif()
-endforeach()
-
-if(SPDLOG_ADDED)
-    message(STATUS "Configuring bundled spdlog from ${SPDLOG_SOURCE_DIR}")
-else()
-    find_package(spdlog CONFIG REQUIRED)
-endif()
-
-set(SPDLOG_TARGET spdlog::spdlog)
-
-add_subdirectory(vendor/args)
+find_package(spdlog CONFIG REQUIRED)
+find_package(args CONFIG REQUIRED)
+find_package(reflectcpp CONFIG REQUIRED)
+find_package(pugixml CONFIG REQUIRED)
 add_subdirectory(vendor/DBPFKit)
-add_subdirectory(vendor/reflect-cpp)
 add_subdirectory(src/shared)
-
 add_subdirectory(src/dll)
 add_subdirectory(src/app)
 

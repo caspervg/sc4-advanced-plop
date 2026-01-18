@@ -17,7 +17,7 @@ std::optional<ExemplarType> ExemplarParser::getExemplarType(const Exemplar::Reco
 }
 
 std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const {
-    auto exemplar = reader.LoadExemplar(entry);
+    const auto exemplar = reader.LoadExemplar(entry);
     if (!exemplar) return std::nullopt;
 
     ParsedBuildingExemplar parsedBuildingExemplar;
@@ -30,14 +30,9 @@ std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const DBPF::
     }
 
     if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kOccupantGroups).value())) {
-        if (prop->IsUint32Array()) {
+        if (prop->IsNumericList()) {
             for (const auto& val : prop->values) {
-                const auto& arr = std::get<std::vector<uint32_t>>(val);
-                parsedBuildingExemplar.occupantGroups.insert(
-                    parsedBuildingExemplar.occupantGroups.end(),
-                    arr.begin(),
-                    arr.end()
-                );
+                parsedBuildingExemplar.occupantGroups.push_back(std::get<uint32_t>(val));
             }
         }
     }
@@ -46,7 +41,7 @@ std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const DBPF::
 }
 
 std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const DBPF::Reader& reader, const DBPF::IndexEntry& entry) const {
-    auto exemplar = reader.LoadExemplar(entry);
+    const auto exemplar = reader.LoadExemplar(entry);
     if (!exemplar) return std::nullopt;
 
     ParsedLotConfigExemplar parsedLotConfigExemplar;
@@ -59,16 +54,16 @@ std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const DBPF
     }
 
     if (auto* prop = exemplar->FindProperty(propertyMapper_.propertyId(kLotConfigSize).value())) {
-        if (prop->IsList() && prop->values.size() >= 2) {
-            uint8_t width = std::get<uint8_t>(prop->values[0]);
-            uint8_t height = std::get<uint8_t>(prop->values[1]);
+        if (prop->IsNumericList() && prop->values.size() >= 2) {
+            auto width = std::get<uint8_t>(prop->values[0]);
+            auto height = std::get<uint8_t>(prop->values[1]);
             parsedLotConfigExemplar.lotSize = {width, height};
         }
     }
 
     std::vector<Exemplar::Property> objectProperties{};
     parsedLotConfigExemplar.buildingInstanceId = -1;
-    if (exemplar->FindProperties(propertyMapper_.propertyId(kLotConfigObject).value(), &objectProperties)) {
+    if (exemplar->FindProperties(propertyMapper_.propertyId(kLotConfigObject).value(), objectProperties)) {
         for (auto const& prop : objectProperties) {
             if (prop.values.size() >= 13) {
                 const auto objectType = std::get<uint32_t>(prop.values[0]);
@@ -84,7 +79,8 @@ std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const DBPF
         return std::nullopt;
     }
 
-    const auto growthStage = exemplar->GetScalar(propertyMapper_.propertyId(kGrowthStage).value());
+    const auto growthStagePropertyId = propertyMapper_.propertyId(kGrowthStage).value();
+    const auto growthStage = exemplar->GetScalar<uint8_t>(growthStagePropertyId);
     if (growthStage.has_value()) {
         parsedLotConfigExemplar.growthStage = growthStage.value();
     }
@@ -101,7 +97,7 @@ std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const DBPF
             };
         }
     } else {
-        const auto iconInstance = exemplar->GetScalar(propertyMapper_.propertyId(kItemIcon));
+        const auto iconInstance = exemplar->GetScalar<uint32_t>(propertyMapper_.propertyId(kItemIcon).value());
         if (iconInstance.has_value()) {
             parsedLotConfigExemplar.iconTgi = DBPF::Tgi{
                 kTypeIdPNG,

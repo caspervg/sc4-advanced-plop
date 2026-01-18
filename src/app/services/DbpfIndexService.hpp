@@ -1,11 +1,22 @@
 #pragma once
+#include <atomic>
+#include <filesystem>
+#include <mutex>
 #include <thread>
+#include <unordered_map>
+#include <vector>
 
-
-#include "../../../vendor/DBPFKit/src/TGI.h"
 #include "PluginLocator.hpp"
 #include "TGI.h"
 
+struct ScanProgress {
+    size_t totalFiles = 0;
+    size_t processedFiles = 0;
+    size_t entriesIndexed = 0;
+    size_t errorCount = 0;
+    std::string currentFile;
+    bool done = false;
+};
 
 class DbpfIndexService {
 public:

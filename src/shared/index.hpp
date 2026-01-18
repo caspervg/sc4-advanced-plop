@@ -4,17 +4,15 @@
 
 #include "rfl/Timestamp.hpp"
 
-constexpr auto kRFC3339TimeFormat = "%FT%TZ";
-
 struct PluginFileInfo {
     std::string filePath;
     uint64_t fileSize;
-    rfl::Timestamp<kRFC3339TimeFormat> lastModified;
+    rfl::Timestamp<"%FT%TZ"> lastModified;
     uint32_t resourceCount;
 };
 
 struct PluginIndex {
-    rfl::Timestamp<kRFC3339TimeFormat> buildTime;
+    rfl::Timestamp<"%FT%TZ"> buildTime;
     std::string pluginsDirectory;
     std::vector<PluginFileInfo> files;
 };
