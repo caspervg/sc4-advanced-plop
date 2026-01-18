@@ -1,9 +1,14 @@
 set(APP_NAME SC4AdvancedLotPlopCli)
 
-file(GLOB APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+# Collect source files from app directory and services subdirectory
+file(GLOB APP_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/*.cpp
+)
 
 add_executable(${APP_NAME} ${APP_SOURCES})
 
+target_compile_definitions(${APP_NAME} PRIVATE NOMINMAX)
 target_compile_definitions(${APP_NAME}
     PRIVATE
         SC4_ADVANCED_LOT_PLOP_VERSION="${PROJECT_VERSION}"
@@ -13,7 +18,30 @@ target_include_directories(${APP_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
 )
-target_link_libraries(${APP_NAME} PRIVATE ${SPDLOG_TARGET} SC4AdvancedLotPlopCore taywee::args DBPFKitLib)
+
+target_link_libraries(${APP_NAME} PRIVATE
+    spdlog::spdlog
+    SC4AdvancedLotPlopCore
+    taywee::args
+    DBPFKitLib
+    pugixml::pugixml
+)
+
+# Copy DLLs to output directory for execution
+if(MSVC)
+    # vcpkg stores debug DLLs in debug/bin and release DLLs in bin
+    set(VCPKG_DEBUG_BIN_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin")
+    set(VCPKG_RELEASE_BIN_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+
+    # Copy DLLs to executable directory based on build configuration
+    add_custom_command(TARGET ${APP_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<IF:$<CONFIG:Debug>,${VCPKG_DEBUG_BIN_DIR},${VCPKG_RELEASE_BIN_DIR}>"
+            "$<TARGET_FILE_DIR:${APP_NAME}>"
+        COMMENT "Copying $<IF:$<CONFIG:Debug>,debug,release> DLLs to executable directory"
+        VERBATIM
+    )
+endif()
 
 install(TARGETS ${APP_NAME}
     RUNTIME DESTINATION bin

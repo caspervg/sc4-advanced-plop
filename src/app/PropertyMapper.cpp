@@ -47,7 +47,7 @@ std::optional<PropertyInfo> PropertyMapper::propertyInfo(const uint32_t property
 }
 
 std::optional<PropertyInfo> PropertyMapper::propertyInfo(const std::string& propertyName) const {
-    const auto propertyId = propertyId(propertyName);
+    const auto propertyId = this->propertyId(propertyName);
     if (!propertyId) {
         return std::nullopt;
     }
@@ -69,11 +69,11 @@ std::optional<uint32_t> PropertyMapper::propertyId(const std::string& propertyNa
 }
 
 std::optional<uint32_t> PropertyMapper::propertyOptionId(const std::string& propertyName, const std::string& optionName) const {
-    const auto propertyId = propertyId(propertyName);
+    const auto propertyId = this->propertyId(propertyName);
     if (!propertyId) {
         return std::nullopt;
     }
-    const auto propertyInfo = propertyInfo(*propertyId).value();
+    const auto propertyInfo = this->propertyInfo(*propertyId).value();
     if (propertyInfo.optionNames_.contains(optionName)) {
         return propertyInfo.optionNames_.at(optionName);
     }

@@ -3,10 +3,10 @@ if(NOT WIN32)
     return()
 endif()
 
-set(IMGUI_SERVICE_ROOT "${CMAKE_SOURCE_DIR}/vendor/sc4-imgui-backend" CACHE PATH "Path to sc4-imgui-backend")
+set(IMGUI_SERVICE_ROOT "${CMAKE_SOURCE_DIR}/vendor/sc4-imgui-service" CACHE PATH "Path to sc4-imgui-service")
 set(IMGUI_PUBLIC_DIR "${IMGUI_SERVICE_ROOT}/src")
 set(IMGUI_INCLUDE_DIR "${IMGUI_SERVICE_ROOT}/vendor/d3d7imgui/ImGui")
-set(IMGUI_LIB_DIR "${IMGUI_SERVICE_ROOT}" CACHE PATH "Path containing imgui.lib from sc4-imgui-backend build")
+set(IMGUI_LIB_DIR "${IMGUI_SERVICE_ROOT}" CACHE PATH "Path containing imgui.lib from sc4-imgui-service build")
 
 set(GZCOM_DIR ${CMAKE_SOURCE_DIR}/vendor/gzcom-dll/gzcom-dll)
 
@@ -32,6 +32,7 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/
 set(SC4_DLL_DEF "${CMAKE_CURRENT_SOURCE_DIR}/SC4AdvancedLotPlop.def")
 
 add_library(${PROJECT_NAME} SHARED ${PROJECT_SOURCES} ${SC4_DLL_DEF})
+target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX)
 
 # Include paths required by the plugin
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -45,25 +46,28 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Link against gzcom2 and spdlog
 set(SC4_DLL_LINK_LIBS
-    ${SPDLOG_TARGET}
+    spdlog::spdlog
     gzcom2
 )
 list(APPEND SC4_DLL_LINK_LIBS SC4AdvancedLotPlopCore)
 
-# Locate imgui import library produced by sc4-imgui-backend
-file(GLOB_RECURSE IMGUI_LIB_CANDIDATES
-    "${IMGUI_LIB_DIR}/imgui.lib"
-    "${IMGUI_LIB_DIR}/*/imgui.lib"
-    "${IMGUI_LIB_DIR}/*/*/imgui.lib"
-    "${IMGUI_LIB_DIR}/*/*/*/imgui.lib"
+# Locate and link imgui library produced by sc4-imgui-service
+# Try multiple search paths to find imgui.lib
+find_library(IMGUI_LIB NAMES imgui
+    PATHS
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib"
+        "${IMGUI_LIB_DIR}"
+        "${IMGUI_LIB_DIR}/lib"
+        "${IMGUI_LIB_DIR}/cmake-build-debug-visual-studio/Debug"
+        "${IMGUI_LIB_DIR}/cmake-build-release-visual-studio/Release"
+    NO_DEFAULT_PATH
 )
-list(LENGTH IMGUI_LIB_CANDIDATES IMGUI_LIB_COUNT)
-if(IMGUI_LIB_COUNT GREATER 0)
-    list(GET IMGUI_LIB_CANDIDATES 0 IMGUI_LIB)
+
+if(IMGUI_LIB)
     list(APPEND SC4_DLL_LINK_LIBS "${IMGUI_LIB}")
     message(STATUS "Using imgui.lib: ${IMGUI_LIB}")
 else()
-    message(FATAL_ERROR "imgui.lib not found. Set IMGUI_LIB_DIR to the directory containing imgui.lib from sc4-imgui-backend.")
+    message(WARNING "imgui.lib not found in vcpkg or sc4-imgui-service build directory. Linking may fail if imgui symbols are needed.")
 endif()
 
 # Core dependencies
@@ -80,11 +84,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
 )
 
-if(MSVC)
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreadedDLL"
-    )
-endif()
+# Allow proper runtime library selection per configuration
+# MSVC_RUNTIME_LIBRARY will use the default for the build configuration
 
 # Deploy to the official Plugins folder if the installation can be located
 if(WIN32)
