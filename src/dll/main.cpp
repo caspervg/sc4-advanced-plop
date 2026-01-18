@@ -1,7 +1,13 @@
-#include "SC4AdvancedLotPlopDirector.h"
+#include "SC4AdvancedLotPlopDirector.hpp"
+
+static SC4AdvancedLotPlopDirector sDirector;
 
 cRZCOMDllDirector* RZGetCOMDllDirector()
 {
-    static SC4AdvancedLotPlopDirector sDirector;
+    static auto sAddedRef = false;
+    if (!sAddedRef) {
+        sDirector.AddRef();
+        sAddedRef = true;
+    }
     return &sDirector;
 }

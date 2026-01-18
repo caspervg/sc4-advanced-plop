@@ -25,6 +25,9 @@
     "name" : "spdlog",
     "version>=" : "1.17.0"
   }, {
+    "name" : "stb",
+    "version>=" : "2024-07-29#1"
+  }, {
     "name" : "vcpkg-cmake-config",
     "version>=" : "2024-05-23"
   }, {

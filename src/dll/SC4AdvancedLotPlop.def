@@ -1,3 +1,2 @@
-LIBRARY SC4AdvancedLotPlop
 EXPORTS
     RZGetCOMDllDirector
