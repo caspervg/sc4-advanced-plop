@@ -185,7 +185,17 @@ DBPF::Reader* DbpfIndexService::getReader(const std::filesystem::path& filePath)
     return readerPtr;
 }
 
-ParseExpected<Exemplar::Record> DbpfIndexService::loadExemplar(const DBPF::Tgi& tgi) const {
+ParseExpected<const Exemplar::Record*> DbpfIndexService::loadExemplar(const DBPF::Tgi& tgi) const {
+    // Check cache first (with read lock)
+    {
+        std::shared_lock readLock(mutex_);
+        auto cacheIt = exemplarCache_.find(tgi);
+        if (cacheIt != exemplarCache_.end()) {
+            return &cacheIt->second;
+        }
+    }
+
+    // Not in cache - need to load it
     // Find which file(s) contain this TGI
     std::shared_lock readLock(mutex_);
     auto tgiIt = tgiToFiles_.find(tgi);
@@ -205,7 +215,10 @@ ParseExpected<Exemplar::Record> DbpfIndexService::loadExemplar(const DBPF::Tgi& 
 
         auto exemplar = reader->LoadExemplar(tgi);
         if (exemplar.has_value()) {
-            return exemplar;
+            // Insert into cache and return pointer to cached version
+            std::unique_lock writeLock(mutex_);
+            auto [it, inserted] = exemplarCache_.try_emplace(tgi, std::move(*exemplar));
+            return &it->second;
         }
     }
 

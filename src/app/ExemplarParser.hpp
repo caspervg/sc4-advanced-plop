@@ -24,6 +24,12 @@ constexpr auto kIconResourceKey = "Icon Resource Key";
 constexpr auto kItemIcon = "Item Icon";
 constexpr auto kTypeIdPNG = 0x856DDBACu;
 constexpr auto kLotIconGroup = 0x6A386D26u;
+constexpr auto kBuildingFamily = "Building/prop Family";
+
+// Lot object array indices (0-based, spec uses 1-based rep numbers)
+constexpr auto kLotObjectIndexType = 0;       // Rep 1: Object type (0 = building, 1 = prop, etc.)
+constexpr auto kLotObjectIndexObjectID = 11;  // Rep 12: ObjectID (0xABBBBCCC format)
+constexpr auto kLotObjectIndexIID = 12;       // Rep 13: IID (building exemplar) or Family ID (for growables)
 
 enum class ExemplarType {
     Building,   // Exemplar Type 0x02
@@ -34,6 +40,7 @@ struct ParsedBuildingExemplar {
     DBPF::Tgi tgi;
     std::string name;
     std::vector<uint32_t> occupantGroups;
+    std::vector<uint32_t> familyIds;  // Building/prop Family values
     std::optional<DBPF::Tgi> iconTgi;
     // TODO other building props
 };
@@ -43,9 +50,10 @@ struct ParsedLotConfigExemplar {
     std::string name;
     std::pair<uint8_t, uint8_t> lotSize;
     uint32_t buildingInstanceId;
+    uint32_t buildingFamilyId = 0;      // Family ID if isFamilyReference is true
+    bool isFamilyReference = false;      // True if lot references a family instead of specific building
     std::optional<uint8_t> growthStage;
     std::optional<std::pair<uint8_t, uint8_t>> capacity; // (min, max)
-    std::optional<DBPF::Tgi> iconTgi;
 };
 
 class ExemplarParser {
@@ -54,7 +62,11 @@ public:
 
     [[nodiscard]] std::optional<ExemplarType> getExemplarType(const Exemplar::Record& exemplar) const;
     [[nodiscard]] std::optional<ParsedBuildingExemplar> parseBuilding(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi) const;
-    [[nodiscard]] std::optional<ParsedLotConfigExemplar> parseLotConfig(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi, const std::unordered_map<uint32_t, ParsedBuildingExemplar>& buildingMap) const;
+    [[nodiscard]] std::optional<ParsedLotConfigExemplar> parseLotConfig(
+        const Exemplar::Record& exemplar,
+        const DBPF::Tgi& tgi,
+        const std::unordered_map<uint32_t, ParsedBuildingExemplar>& buildingMap,
+        const std::unordered_map<uint32_t, std::vector<uint32_t>>& familyToBuildingsMap) const;
 
     // Conversion functions to canonical entities
     [[nodiscard]] Building buildingFromParsed(const ParsedBuildingExemplar& parsed) const;

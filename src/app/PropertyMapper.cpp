@@ -85,7 +85,7 @@ uint32_t PropertyMapper::parsePropertyId_(const std::string& idStr) {
         return std::stoul(idStr, nullptr, 16);
     }
 
-    spdlog::warn("Skipping symbolic property ID: {}", idStr);
+    spdlog::trace("Skipping symbolic property ID: {}", idStr);
     return 0;
 }
 

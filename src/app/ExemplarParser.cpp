@@ -1,7 +1,6 @@
 #include "ExemplarParser.hpp"
 
 #include <unordered_set>
-#include <cstring>
 
 #include "spdlog/spdlog.h"
 
@@ -15,13 +14,13 @@ namespace {
         }
         // Width and height are at bytes 16-19 and 20-23 (big-endian)
         uint32_t width = (static_cast<uint32_t>(data[16]) << 24) |
-                         (static_cast<uint32_t>(data[17]) << 16) |
-                         (static_cast<uint32_t>(data[18]) << 8) |
-                         static_cast<uint32_t>(data[19]);
+            (static_cast<uint32_t>(data[17]) << 16) |
+            (static_cast<uint32_t>(data[18]) << 8) |
+            static_cast<uint32_t>(data[19]);
         uint32_t height = (static_cast<uint32_t>(data[20]) << 24) |
-                          (static_cast<uint32_t>(data[21]) << 16) |
-                          (static_cast<uint32_t>(data[22]) << 8) |
-                          static_cast<uint32_t>(data[23]);
+            (static_cast<uint32_t>(data[21]) << 16) |
+            (static_cast<uint32_t>(data[22]) << 8) |
+            static_cast<uint32_t>(data[23]);
         return {width, height};
     }
 }
@@ -30,114 +29,162 @@ ExemplarParser::ExemplarParser(const PropertyMapper& mapper, const DbpfIndexServ
     : propertyMapper_(mapper), indexService_(indexService) {}
 
 std::optional<ExemplarType> ExemplarParser::getExemplarType(const Exemplar::Record& exemplar) const {
-    auto propIdOpt = propertyMapper_.propertyId(kExemplarType);
+    const auto propIdOpt = propertyMapper_.propertyId(kExemplarType);
     if (!propIdOpt) {
         return std::nullopt;
     }
 
-    // Use cohort-aware property lookup
     const auto* prop = findProperty(exemplar, *propIdOpt);
     if (!prop || prop->values.empty()) {
-        // Unknown or empty Exemplar Type
         return std::nullopt;
     }
 
-    const auto exemplarType = std::get<uint32_t>(prop->values.front());
+    const auto exemplarTypeOpt = prop->GetScalarAs<uint32_t>();
+    if (!exemplarTypeOpt) {
+        return std::nullopt;
+    }
+
     auto buildingTypeOpt = propertyMapper_.propertyOptionId(kExemplarType, kExemplarTypeBuilding);
     auto lotConfigTypeOpt = propertyMapper_.propertyOptionId(kExemplarType, kExemplarTypeLotConfig);
 
-    if (buildingTypeOpt && exemplarType == *buildingTypeOpt) return ExemplarType::Building;
-    if (lotConfigTypeOpt && exemplarType == *lotConfigTypeOpt) return ExemplarType::LotConfig;
+    if (buildingTypeOpt && *exemplarTypeOpt == *buildingTypeOpt) return ExemplarType::Building;
+    if (lotConfigTypeOpt && *exemplarTypeOpt == *lotConfigTypeOpt) return ExemplarType::LotConfig;
     return std::nullopt;
 }
 
-std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi) const {
+std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const Exemplar::Record& exemplar,
+                                                                    const DBPF::Tgi& tgi) const {
     ParsedBuildingExemplar parsedBuildingExemplar;
     parsedBuildingExemplar.tgi = tgi;
 
     // Use cohort-aware property lookup for all properties
     if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kExemplarName).value())) {
-        if (prop->IsString() && !prop->values.empty()) {
-            parsedBuildingExemplar.name = std::get<std::string>(prop->values.front());
+        if (auto name = prop->GetScalarAs<std::string>()) {
+            parsedBuildingExemplar.name = *name;
         }
     }
 
-    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kOccupantGroups).value())) {
-        if (prop->IsNumericList()) {
-            for (const auto& val : prop->values) {
-                parsedBuildingExemplar.occupantGroups.push_back(std::get<uint32_t>(val));
+    if (const auto propId = propertyMapper_.propertyId(kOccupantGroups)) {
+        if (auto* prop = findProperty(exemplar, *propId)) {
+            if (prop->IsNumericList()) {
+                for (size_t i = 0; i < prop->values.size(); ++i) {
+                    if (auto v = prop->GetScalarAs<uint32_t>(i)) {
+                        parsedBuildingExemplar.occupantGroups.push_back(*v);
+                    }
+                }
             }
         }
     }
 
-    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kItemIcon).value())) {
-        if (!prop->values.empty()) {
-            const auto iconInstance = std::get<uint32_t>(prop->values.front());
-            parsedBuildingExemplar.iconTgi = DBPF::Tgi{
-                kTypeIdPNG,
-                kLotIconGroup,
-                iconInstance
-            };
+    // Extract building family IDs
+    const auto familyPropId = propertyMapper_.propertyId(kBuildingFamily).value();
+    if (auto* prop = findProperty(exemplar, familyPropId)) {
+        for (size_t i = 0; i < prop->values.size(); ++i) {
+            if (auto familyId = prop->GetScalarAs<uint32_t>(i)) {
+                parsedBuildingExemplar.familyIds.push_back(*familyId);
+            }
+        }
+    }
+
+    if (auto propId = propertyMapper_.propertyId(kItemIcon)) {
+        if (auto* prop = findProperty(exemplar, *propId)) {
+            if (const auto iconInstance = prop->GetScalarAs<uint32_t>()) {
+                parsedBuildingExemplar.iconTgi = DBPF::Tgi{
+                    kTypeIdPNG,
+                    kLotIconGroup,
+                    *iconInstance
+                };
+            }
         }
     }
 
     return parsedBuildingExemplar;
 }
 
-std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(const Exemplar::Record& exemplar, const DBPF::Tgi& tgi, const std::unordered_map<uint32_t, ParsedBuildingExemplar>& buildingMap) const {
+std::optional<ParsedLotConfigExemplar> ExemplarParser::parseLotConfig(
+    const Exemplar::Record& exemplar,
+    const DBPF::Tgi& tgi,
+    const std::unordered_map<uint32_t, ParsedBuildingExemplar>& buildingMap,
+    const std::unordered_map<uint32_t, std::vector<uint32_t>>& familyToBuildingsMap) const {
     ParsedLotConfigExemplar parsedLotConfigExemplar;
     parsedLotConfigExemplar.tgi = tgi;
     parsedLotConfigExemplar.buildingInstanceId = 0;
+    parsedLotConfigExemplar.buildingFamilyId = 0;
+    parsedLotConfigExemplar.isFamilyReference = false;
 
-    // Use cohort-aware property lookup for all properties
-    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kExemplarName).value())) {
-        if (prop->IsString() && !prop->values.empty()) {
-            parsedLotConfigExemplar.name = std::get<std::string>(prop->values.front());
+    if (auto propId = propertyMapper_.propertyId(kExemplarName)) {
+        if (auto* prop = findProperty(exemplar, *propId)) {
+            if (auto name = prop->GetScalarAs<std::string>()) {
+                parsedLotConfigExemplar.name = *name;
+            }
         }
     }
 
-    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kLotConfigSize).value())) {
-        if (prop->IsNumericList() && prop->values.size() >= 2) {
-            auto width = std::get<uint8_t>(prop->values[0]);
-            auto height = std::get<uint8_t>(prop->values[1]);
-            parsedLotConfigExemplar.lotSize = {width, height};
+    if (auto propId = propertyMapper_.propertyId(kLotConfigSize)) {
+        if (auto* prop = findProperty(exemplar, *propId)) {
+            if (prop->IsNumericList() && prop->values.size() >= 2) {
+                auto width = prop->GetScalarAs<uint8_t>(0);
+                auto height = prop->GetScalarAs<uint8_t>(1);
+                if (width && height) {
+                    parsedLotConfigExemplar.lotSize = {*width, *height};
+                }
+            }
         }
     }
 
     // Scan through the lot objects property ID range to find the building
-    // Use cohort-aware lookup for lot object properties too
     for (uint32_t propID = kPropertyLotObjectsStart;
          propID <= kPropertyLotObjectsEnd;
          propID++) {
-
         if (auto* prop = findProperty(exemplar, propID)) {
             if (prop->values.size() >= 13) {
-                const auto objectType = std::get<uint32_t>(prop->values[0]);
-                if (objectType == kLotConfigObjectTypeBuilding) {
-                    parsedLotConfigExemplar.buildingInstanceId = std::get<uint32_t>(prop->values[12]);
+                auto objectType = prop->GetScalarAs<uint32_t>(kLotObjectIndexType);
+                if (objectType && *objectType == kLotConfigObjectTypeBuilding) {
+                    // Rep 13 (index 12) contains either:
+                    // - Building IID (for most ploppables by Maxis, and most custom content)
+                    // - Family ID (for all growables by Maxis, and very rarely custom content)
+                    // We determine which by checking if it matches a known building first
+                    auto rep13Value = prop->GetScalarAs<uint32_t>(kLotObjectIndexIID);
+
+                    if (rep13Value) {
+                        // First, check if this is a known building instance ID
+                        auto buildingIt = buildingMap.find(*rep13Value);
+                        if (buildingIt != buildingMap.end()) {
+                            // Direct building IID reference
+                            parsedLotConfigExemplar.buildingInstanceId = *rep13Value;
+                        }
+                        else {
+                            // Not a known building - check if it's a family ID
+                            auto famIt = familyToBuildingsMap.find(*rep13Value);
+                            if (famIt != familyToBuildingsMap.end() && !famIt->second.empty()) {
+                                // This is a family reference
+                                parsedLotConfigExemplar.isFamilyReference = true;
+                                parsedLotConfigExemplar.buildingFamilyId = *rep13Value;
+                                // Use the first building from this family
+                                parsedLotConfigExemplar.buildingInstanceId = famIt->second.front();
+                            }
+                            else {
+                                // Unknown reference - could be a building we haven't seen yet
+                                // or a family with no members. Store it as a potential IID.
+                                parsedLotConfigExemplar.buildingInstanceId = *rep13Value;
+                            }
+                        }
+                    }
                     break;
                 }
             }
         }
     }
 
+    // We need either a valid building ID or a family reference with a resolved building
     if (!parsedLotConfigExemplar.buildingInstanceId) {
         return std::nullopt;
     }
 
-    if (auto* prop = findProperty(exemplar, propertyMapper_.propertyId(kGrowthStage).value())) {
-        if (!prop->values.empty()) {
-            parsedLotConfigExemplar.growthStage = std::get<uint8_t>(prop->values.front());
-        }
-    }
-
-    // Look up the icon from the building exemplar using the building map
-    if (parsedLotConfigExemplar.buildingInstanceId != 0) {
-        auto it = buildingMap.find(parsedLotConfigExemplar.buildingInstanceId);
-        if (it != buildingMap.end()) {
-            const auto& building = it->second;
-            if (building.iconTgi.has_value()) {
-                parsedLotConfigExemplar.iconTgi = building.iconTgi;
+    if (auto propId = propertyMapper_.propertyId(kGrowthStage)) {
+        if (auto* prop = findProperty(exemplar, *propId)) {
+            if (auto v = prop->GetScalarAs<uint8_t>()) {
+                parsedLotConfigExemplar.growthStage = *v;
             }
         }
     }
@@ -150,13 +197,13 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
     building.instanceId = parsed.tgi.instance;
     building.groupId = parsed.tgi.group;
     building.name = parsed.name;
-    building.description = "";  // Not available from exemplar data
+    building.description = ""; // Not available from exemplar data
     building.occupantGroups = std::unordered_set(parsed.occupantGroups.begin(), parsed.occupantGroups.end());
     building.thumbnail = std::nullopt;
 
     // Load icon if TGI is available and we have index service
     if (parsed.iconTgi.has_value() && indexService_) {
-        auto pngData = indexService_->loadEntryData(*parsed.iconTgi);
+        const auto pngData = indexService_->loadEntryData(*parsed.iconTgi);
         if (pngData.has_value() && !pngData->empty()) {
             auto [width, height] = parsePngDimensions(*pngData);
 
@@ -191,7 +238,7 @@ Lot ExemplarParser::lotFromParsed(const ParsedLotConfigExemplar& parsed, const B
 
 const Exemplar::Property* ExemplarParser::findProperty(
     const Exemplar::Record& exemplar,
-    uint32_t propertyId
+    const uint32_t propertyId
 ) const {
     // If we have an index service, use recursive cohort following
     if (indexService_) {
@@ -239,21 +286,24 @@ const Exemplar::Property* ExemplarParser::findPropertyRecursive(
 
     if (tgiIt != tgiIndex.end()) {
         // Use the index service's cached loader instead of opening files repeatedly
-        auto parentExemplar = indexService_->loadExemplar(parentTgi);
-        if (parentExemplar.has_value()) {
+        auto parentExemplarResult = indexService_->loadExemplar(parentTgi);
+        if (parentExemplarResult.has_value()) {
+            const Exemplar::Record* parentExemplar = *parentExemplarResult;
             // Recursively search parent
-            spdlog::info("Searching parent cohort 0x{:08X}/0x{:08X}/0x{:08X} for property 0x{:08X}", parentTgi.type, parentTgi.group, parentTgi.instance, propertyId);
+            spdlog::trace("Searching parent cohort 0x{:08X}/0x{:08X}/0x{:08X} for property 0x{:08X}", parentTgi.type,
+                         parentTgi.group, parentTgi.instance, propertyId);
             const auto prop = findPropertyRecursive(*parentExemplar, propertyId, visitedCohorts);
             if (prop != nullptr) {
-                spdlog::info("Found property 0x{:08X} in parent cohort: {}", propertyId, prop->ToString());
+                spdlog::trace("Found property 0x{:08X} in parent cohort: {}", propertyId, prop->ToString());
                 return prop;
-            } else {
-                spdlog::info("Property 0x{:08X} not found in parent cohort", propertyId);
             }
-        } else {
-            // Failed to load parent - log for debugging
+            else {
+                spdlog::trace("Property 0x{:08X} not found in parent cohort", propertyId);
+            }
+        }
+        else {
             spdlog::warn("Failed to load parent cohort 0x{:08X}/0x{:08X}/0x{:08X}: {}",
-                         parentTgi.type, parentTgi.group, parentTgi.instance, parentExemplar.error().message);
+                         parentTgi.type, parentTgi.group, parentTgi.instance, parentExemplarResult.error().message);
         }
     }
 
