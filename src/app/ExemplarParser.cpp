@@ -4,24 +4,82 @@
 
 #include "spdlog/spdlog.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 namespace {
-    // Parse PNG dimensions from the header (first 24 bytes)
-    std::pair<uint32_t, uint32_t> parsePngDimensions(const std::vector<uint8_t>& data) {
-        if (data.size() < 24) return {0, 0};
-        // Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
-        if (data[0] != 0x89 || data[1] != 0x50 || data[2] != 0x4E || data[3] != 0x47) {
-            return {0, 0};
+    // Icon dimensions: first 44px is greyscale locked icon, second 44px is the color icon we want
+    constexpr uint32_t kIconSkipWidth = 44;   // Skip the first 44 pixels (greyscale locked icon)
+    constexpr uint32_t kIconCropWidth = 44;   // Extract the next 44 pixels (color icon)
+
+    // Decode PNG data to RGBA32 pixel data, extracting the second 44-pixel wide icon
+    // Returns empty vector on failure
+    struct DecodedImage {
+        std::vector<std::byte> pixels;  // RGBA32 data
+        uint32_t width = 0;
+        uint32_t height = 0;
+    };
+
+    DecodedImage decodePngToRgba32(const std::vector<uint8_t>& pngData) {
+        DecodedImage result;
+
+        if (pngData.empty()) {
+            spdlog::debug("decodePngToRgba32: empty pngData");
+            return result;
         }
-        // Width and height are at bytes 16-19 and 20-23 (big-endian)
-        uint32_t width = (static_cast<uint32_t>(data[16]) << 24) |
-            (static_cast<uint32_t>(data[17]) << 16) |
-            (static_cast<uint32_t>(data[18]) << 8) |
-            static_cast<uint32_t>(data[19]);
-        uint32_t height = (static_cast<uint32_t>(data[20]) << 24) |
-            (static_cast<uint32_t>(data[21]) << 16) |
-            (static_cast<uint32_t>(data[22]) << 8) |
-            static_cast<uint32_t>(data[23]);
-        return {width, height};
+
+        spdlog::debug("decodePngToRgba32: attempting to decode {} bytes", pngData.size());
+
+        int width, height, channels;
+        unsigned char* pixels = stbi_load_from_memory(
+            pngData.data(),
+            static_cast<int>(pngData.size()),
+            &width, &height, &channels, 4  // Force RGBA output
+        );
+
+        if (!pixels) {
+            spdlog::warn("Failed to decode PNG ({} bytes): {}", pngData.size(), stbi_failure_reason());
+            return result;
+        }
+
+        spdlog::debug("decodePngToRgba32: decoded {}x{} image with {} channels", width, height, channels);
+
+        // Check if image is wide enough to have the second icon
+        if (static_cast<uint32_t>(width) < kIconSkipWidth + kIconCropWidth) {
+            spdlog::debug("decodePngToRgba32: image too narrow ({}px), need at least {}px",
+                width, kIconSkipWidth + kIconCropWidth);
+            stbi_image_free(pixels);
+            return result;
+        }
+
+        const uint32_t cropWidth = kIconCropWidth;
+        const uint32_t cropHeight = static_cast<uint32_t>(height);
+
+        // Copy the second 44-pixel region (starting at pixel 44) to std::byte vector (row by row)
+        const size_t croppedDataSize = static_cast<size_t>(cropWidth) * cropHeight * 4;
+        result.pixels.resize(croppedDataSize);
+
+        for (uint32_t y = 0; y < cropHeight; ++y) {
+            // Source offset: skip to row y, then skip first kIconSkipWidth pixels
+            const size_t srcOffset = (static_cast<size_t>(y) * width + kIconSkipWidth) * 4;
+            const size_t dstOffset = static_cast<size_t>(y) * cropWidth * 4;
+            std::memcpy(
+                result.pixels.data() + dstOffset,
+                pixels + srcOffset,
+                cropWidth * 4
+            );
+        }
+
+        // Swap R and B channels (RGBA -> BGRA) for DirectX compatibility
+        for (size_t i = 0; i < croppedDataSize; i += 4) {
+            std::swap(result.pixels[i], result.pixels[i + 2]);  // Swap R and B
+        }
+
+        result.width = cropWidth;
+        result.height = cropHeight;
+
+        stbi_image_free(pixels);
+        return result;
     }
 }
 
@@ -203,19 +261,27 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
 
     // Load icon if TGI is available and we have index service
     if (parsed.iconTgi.has_value() && indexService_) {
+        spdlog::debug("buildingFromParsed: Loading icon for building {} (0x{:08X})",
+            parsed.name, parsed.tgi.instance);
         const auto pngData = indexService_->loadEntryData(*parsed.iconTgi);
         if (pngData.has_value() && !pngData->empty()) {
-            auto [width, height] = parsePngDimensions(*pngData);
+            spdlog::debug("buildingFromParsed: Got {} bytes of PNG data", pngData->size());
+            // Decode PNG to RGBA32 pixel data
+            auto decoded = decodePngToRgba32(*pngData);
 
-            // Convert uint8_t vector to std::byte vector for rfl::Bytestring
-            std::vector<std::byte> byteVec(pngData->size());
-            std::memcpy(byteVec.data(), pngData->data(), pngData->size());
-
-            Icon icon;
-            icon.data = rfl::Bytestring(std::move(byteVec));
-            icon.width = width;
-            icon.height = height;
-            building.thumbnail = icon;
+            if (!decoded.pixels.empty()) {
+                spdlog::debug("buildingFromParsed: Decoded to {}x{} RGBA", decoded.width, decoded.height);
+                Icon icon;
+                icon.data = rfl::Bytestring(std::move(decoded.pixels));
+                icon.width = decoded.width;
+                icon.height = decoded.height;
+                building.thumbnail = icon;
+            } else {
+                spdlog::warn("buildingFromParsed: PNG decode returned empty pixels for {}", parsed.name);
+            }
+        } else {
+            spdlog::debug("buildingFromParsed: No PNG data found for icon TGI 0x{:08X}/0x{:08X}/0x{:08X}",
+                parsed.iconTgi->type, parsed.iconTgi->group, parsed.iconTgi->instance);
         }
     }
 

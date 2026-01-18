@@ -32,7 +32,7 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/
 set(SC4_DLL_DEF "${CMAKE_CURRENT_SOURCE_DIR}/SC4AdvancedLotPlop.def")
 
 add_library(${PROJECT_NAME} SHARED ${PROJECT_SOURCES} ${SC4_DLL_DEF})
-target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX)
+target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX IMGUI_DLL_IMPORT)
 
 # Include paths required by the plugin
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -47,17 +47,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # Link against gzcom2 and spdlog
 set(SC4_DLL_LINK_LIBS
     spdlog::spdlog
+    reflectcpp::reflectcpp
     gzcom2
 )
 list(APPEND SC4_DLL_LINK_LIBS SC4AdvancedLotPlopCore)
 
 # Locate and link imgui library produced by sc4-imgui-service
-# Try multiple search paths to find imgui.lib
+# IMPORTANT: Must use the sc4-imgui-service imgui.lib, NOT the vcpkg version!
+# The sc4-imgui-service version has DirectX 7 backend support and matches the runtime imgui.dll
 find_library(IMGUI_LIB NAMES imgui
     PATHS
-        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib"
         "${IMGUI_LIB_DIR}"
-        "${IMGUI_LIB_DIR}/lib"
+        "${IMGUI_LIB_DIR}/Release"
+        "${IMGUI_LIB_DIR}/Debug"
         "${IMGUI_LIB_DIR}/cmake-build-debug-visual-studio/Debug"
         "${IMGUI_LIB_DIR}/cmake-build-release-visual-studio/Release"
     NO_DEFAULT_PATH
@@ -84,8 +86,13 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
 )
 
-# Allow proper runtime library selection per configuration
-# MSVC_RUNTIME_LIBRARY will use the default for the build configuration
+# Use dynamic runtime library to match other SC4 plugins and the game's runtime.
+# This is critical for plugin compatibility.
+if(MSVC)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+endif()
 
 # Deploy to the official Plugins folder if the installation can be located
 if(WIN32)

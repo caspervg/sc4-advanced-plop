@@ -8,13 +8,13 @@
 #include "rfl/TaggedUnion.hpp"
 
 struct PreRendered {
-    rfl::Bytestring data;
+    rfl::Bytestring data;  // RGBA32 pixel data (width * height * 4 bytes)
     uint32_t width;
     uint32_t height;
 };
 
 struct Icon {
-    rfl::Bytestring data;
+    rfl::Bytestring data;  // RGBA32 pixel data (width * height * 4 bytes)
     uint32_t width;
     uint32_t height;
 };
