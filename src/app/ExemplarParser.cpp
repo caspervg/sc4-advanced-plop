@@ -1,6 +1,8 @@
 #include "ExemplarParser.hpp"
 #include "LTextReader.h"
 
+#include <charconv>
+#include <cmath>
 #include <optional>
 #include <span>
 #include <unordered_set>
@@ -181,7 +183,7 @@ std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const Exempl
             if (auto* prop = findProperty(exemplar, *propId)) {
                 if (auto tgiKey = tgiFromProperty(prop, kTypeIdLText)) {
                     if (auto localized = loadLocalizedText(indexService_, *tgiKey)) {
-                        parsedBuildingExemplar.name = *localized;
+                        parsedBuildingExemplar.name = resolveLTextTags_(*localized, exemplar);
                     }
                 }
             }
@@ -202,7 +204,7 @@ std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const Exempl
         if (auto* prop = findProperty(exemplar, *propId)) {
             if (auto tgiKey = tgiFromProperty(prop, kTypeIdLText)) {
                 if (auto localized = loadLocalizedText(indexService_, *tgiKey)) {
-                    parsedBuildingExemplar.description = *localized;
+                    parsedBuildingExemplar.description = resolveLTextTags_(*localized, exemplar);
                 }
             }
         }
@@ -470,4 +472,89 @@ const Exemplar::Property* ExemplarParser::findPropertyRecursive(
     }
 
     return nullptr;
+}
+
+std::string ExemplarParser::resolveLTextTags_(std::string_view text,
+                                              const Exemplar::Record& exemplar) const {
+    auto formatValue = [](const Exemplar::Property& prop, char mode) -> std::optional<std::string> {
+        if (prop.values.empty()) {
+            return std::nullopt;
+        }
+
+        return std::visit([mode](const auto& value) -> std::optional<std::string> {
+            using V = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<V, std::string>) {
+                if (mode == 'd') {
+                    return value;
+                }
+                return std::nullopt;
+            } else if constexpr (std::is_same_v<V, bool>) {
+                if (mode == 'd') {
+                    return value ? "1" : "0";
+                }
+                return std::nullopt;
+            } else if constexpr (std::is_integral_v<V>) {
+                if (mode == 'm') {
+                    return std::string("§") + std::to_string(static_cast<int64_t>(value));
+                }
+                return std::to_string(static_cast<int64_t>(value));
+            } else if constexpr (std::is_same_v<V, float>) {
+                if (mode == 'm') {
+                    const auto rounded = static_cast<int64_t>(std::llround(value));
+                    return std::string("§") + std::to_string(rounded);
+                }
+                return std::to_string(value);
+            } else {
+                return std::nullopt;
+            }
+        }, prop.values.front());
+    };
+
+    std::string result;
+    result.reserve(text.size());
+
+    size_t i = 0;
+    while (i < text.size()) {
+        if (text[i] != '#') {
+            result.push_back(text[i]);
+            ++i;
+            continue;
+        }
+
+        const size_t end = text.find('#', i + 1);
+        if (end == std::string_view::npos) {
+            result.append(text.substr(i));
+            break;
+        }
+
+        const auto token = text.substr(i + 1, end - i - 1);
+        bool replaced = false;
+        if (token.size() > 2 && token[1] == ':' && (token[0] == 'm' || token[0] == 'd')) {
+            uint32_t propertyId = 0;
+            const auto* begin = token.data() + 2;
+            const auto* tokenEnd = token.data() + token.size();
+            const auto [ptr, ec] = std::from_chars(begin, tokenEnd, propertyId, 16);
+            if (ec == std::errc() && ptr == tokenEnd) {
+                if (const auto* prop = findProperty(exemplar, propertyId)) {
+                    if (auto formatted = formatValue(*prop, token[0])) {
+                        result.append(*formatted);
+                        replaced = true;
+                    }
+                    else {
+                        spdlog::warn("LTEXT tag {} for property 0x{:08X} could not be formatted", token, propertyId);
+                    }
+                }
+                else {
+                    spdlog::warn("LTEXT tag {} references missing property 0x{:08X}", token, propertyId);
+                }
+            }
+        }
+
+        if (!replaced) {
+            result.append(text.substr(i, end - i + 1));
+        }
+        i = end + 1;
+    }
+
+    return result;
 }

@@ -8,8 +8,24 @@
 LotPlopPanel::LotPlopPanel(SC4AdvancedLotPlopDirector* director, cIGZImGuiService* imguiService)
     : director_(director), imguiService_(imguiService) {}
 
+void LotPlopPanel::SetOpen(bool open) {
+    isOpen_ = open;
+}
+
+bool LotPlopPanel::IsOpen() const {
+    return isOpen_;
+}
+
 void LotPlopPanel::OnRender() {
-    ImGui::Begin("Advanced Lot Plop", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    if (!isOpen_) {
+        return;
+    }
+
+    ImGui::Begin("Advanced Lot Plop", &isOpen_, ImGuiWindowFlags_AlwaysAutoResize);
+    if (!isOpen_) {
+        ImGui::End();
+        return;
+    }
 
     const auto& lots = director_->GetLots();
 

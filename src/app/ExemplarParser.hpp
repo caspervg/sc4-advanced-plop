@@ -91,6 +91,8 @@ private:
         uint32_t propertyId,
         std::unordered_set<uint32_t>& visitedCohorts
     ) const;
+    [[nodiscard]] std::string resolveLTextTags_(std::string_view text,
+                                                const Exemplar::Record& exemplar) const;
 
     const PropertyMapper& propertyMapper_;
     const DbpfIndexService* indexService_;
