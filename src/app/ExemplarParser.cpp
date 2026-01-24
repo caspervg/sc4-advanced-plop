@@ -1,10 +1,14 @@
 #include "ExemplarParser.hpp"
 #include "LTextReader.h"
 #include "ThumbnailRenderer.hpp"
+#include "raylib.h"
 
 #include <charconv>
 #include <cmath>
+#include <filesystem>
+#include <iomanip>
 #include <optional>
+#include <sstream>
 #include <span>
 #include <unordered_set>
 
@@ -136,10 +140,15 @@ namespace {
     }
 }
 
+namespace fs = std::filesystem;
+
 ExemplarParser::ExemplarParser(const PropertyMapper& mapper,
                                const DbpfIndexService* indexService,
-                               bool renderModelThumbnails)
-    : propertyMapper_(mapper), indexService_(indexService) {
+                               bool renderModelThumbnails,
+                               std::optional<std::filesystem::path> thumbnailDumpDir)
+    : propertyMapper_(mapper),
+      indexService_(indexService),
+      thumbnailDumpDir_(std::move(thumbnailDumpDir)) {
     if (renderModelThumbnails && indexService_) {
         thumbnailRenderer_ = std::make_unique<thumb::ThumbnailRenderer>(*indexService_);
     }
@@ -427,6 +436,8 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
             preview.width = rendered->width;
             preview.height = rendered->height;
             building.thumbnail = preview;
+
+            dumpRenderedThumbnail_(*parsed.modelTgi, parsed.tgi.instance);
         } else {
             spdlog::debug("Thumbnail render failed for building {} ({})",
                           parsed.name, parsed.modelTgi->ToString());
@@ -451,6 +462,60 @@ Lot ExemplarParser::lotFromParsed(const ParsedLotConfigExemplar& parsed, const B
     lot.purposeType = parsed.purposeType;
     lot.building = building;
     return lot;
+}
+
+void ExemplarParser::dumpRenderedThumbnail_(const DBPF::Tgi& modelTgi, const uint32_t buildingInstanceId) const {
+    if (!thumbnailRenderer_ || !thumbnailDumpDir_) {
+        return;
+    }
+
+    constexpr uint32_t kDumpThumbnailSize = 128;
+    auto rendered = thumbnailRenderer_->renderModel(modelTgi, kDumpThumbnailSize);
+    if (!rendered.has_value() || rendered->pixels.empty()) {
+        return;
+    }
+
+    std::error_code ec;
+    fs::create_directories(*thumbnailDumpDir_, ec);
+    if (ec) {
+        spdlog::warn("Could not create thumbnail dump directory {}: {}", thumbnailDumpDir_->string(), ec.message());
+        return;
+    }
+
+    auto rgba = convertBgraToRgba_(rendered->pixels);
+    if (rgba.empty()) {
+        return;
+    }
+
+    std::ostringstream nameBuilder;
+    nameBuilder << "thumb_0x" << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
+                << buildingInstanceId << "_"
+                << std::dec << kDumpThumbnailSize << ".png";
+    const auto outPath = *thumbnailDumpDir_ / nameBuilder.str();
+
+    Image img{
+        .data = rgba.data(),
+        .width = static_cast<int>(rendered->width),
+        .height = static_cast<int>(rendered->height),
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+    };
+
+    if (!ExportImage(img, outPath.string().c_str())) {
+        spdlog::warn("Failed to export thumbnail for building 0x{:08X}", buildingInstanceId);
+    }
+}
+
+std::vector<std::byte> ExemplarParser::convertBgraToRgba_(const std::vector<std::byte>& pixels) {
+    std::vector<std::byte> rgba;
+    rgba.resize(pixels.size());
+    for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+        rgba[i + 0] = pixels[i + 2];
+        rgba[i + 1] = pixels[i + 1];
+        rgba[i + 2] = pixels[i + 0];
+        rgba[i + 3] = pixels[i + 3];
+    }
+    return rgba;
 }
 
 const Exemplar::Property* ExemplarParser::findProperty(
@@ -615,7 +680,7 @@ std::string ExemplarParser::resolveLTextTags_(std::string_view text,
 std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record& exemplar,
                                                          const DBPF::Tgi& exemplarTgi) const {
     constexpr int kZoomLevel = 5;
-    constexpr int kRotation = 0; // South
+    constexpr int kRotation = 2; // South
     auto getU32 = [](const Exemplar::Property* prop, size_t index) -> std::optional<uint32_t> {
         if (!prop || index >= prop->values.size()) {
             return std::nullopt;

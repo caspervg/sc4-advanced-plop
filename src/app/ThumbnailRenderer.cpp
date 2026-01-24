@@ -7,6 +7,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "S3DStructures.h"
+#include "rlgl.h"
 #include "spdlog/spdlog.h"
 
 namespace thumb {
@@ -57,7 +58,6 @@ namespace thumb {
 
         Camera3D camera{};
         camera.projection = CAMERA_ORTHOGRAPHIC;
-        camera.fovy = span * 1.2f / 2;
         camera.up = Vector3{0.0f, 1.0f, 0.0f};
         camera.target = center;
 
@@ -72,11 +72,47 @@ namespace thumb {
         };
         camera.position = Vector3Add(center, Vector3Scale(dir, span));
 
+        // Compute ortho size to tightly fit all corners after rotation
+        Vector3 right = Vector3CrossProduct(dir, camera.up);
+        if (Vector3Length(right) == 0.0f) {
+            right = Vector3{1.0f, 0.0f, 0.0f};
+        }
+        right = Vector3Normalize(right);
+        Vector3 camUp = Vector3Normalize(Vector3CrossProduct(right, dir));
+
+        float halfWidth = 0.0f;
+        float halfHeight = 0.0f;
+        for (int xi = 0; xi < 2; ++xi) {
+            for (int yi = 0; yi < 2; ++yi) {
+                for (int zi = 0; zi < 2; ++zi) {
+                    Vector3 corner{
+                        xi ? bounds.max.x : bounds.min.x,
+                        yi ? bounds.max.y : bounds.min.y,
+                        zi ? bounds.max.z : bounds.min.z
+                    };
+                    Vector3 offset = Vector3Scale(Vector3Subtract(corner, center), scale);
+                    const float projRight = std::abs(Vector3DotProduct(offset, right));
+                    const float projUp = std::abs(Vector3DotProduct(offset, camUp));
+                    halfWidth = std::max(halfWidth, projRight);
+                    halfHeight = std::max(halfHeight, projUp);
+                }
+            }
+        }
+
+        float orthoHalfSize = std::max(halfWidth, halfHeight) * 1.05f;
+        if (orthoHalfSize <= 0.0f) {
+            orthoHalfSize = scale;
+        }
+        camera.fovy = orthoHalfSize * 2.0f;
+
         BeginTextureMode(target);
         ClearBackground(Color{0, 0, 0, 0});
         BeginMode3D(camera);
+        const Vector3 renderScale{scale, scale, -scale}; // Flip Z to match SC4 viewer convention
+        rlDisableBackfaceCulling();
         DrawModelEx(modelHandle->model, Vector3Zero(), Vector3{0, 1, 0}, 0.0f,
-                    Vector3{scale, scale, scale}, WHITE);
+                    renderScale, WHITE);
+        rlEnableBackfaceCulling();
         EndMode3D();
         EndTextureMode();
 

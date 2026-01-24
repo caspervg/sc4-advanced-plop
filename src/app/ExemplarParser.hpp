@@ -6,6 +6,8 @@
 #include "services/DbpfIndexService.hpp"
 #include "../shared/entities.hpp"
 #include <memory>
+#include <filesystem>
+#include <optional>
 
 namespace thumb {
     class ThumbnailRenderer;
@@ -85,7 +87,8 @@ class ExemplarParser {
 public:
     explicit ExemplarParser(const PropertyMapper& mapper,
                             const DbpfIndexService* indexService = nullptr,
-                            bool renderModelThumbnails = false);
+                            bool renderModelThumbnails = false,
+                            std::optional<std::filesystem::path> thumbnailDumpDir = std::nullopt);
     ~ExemplarParser();
 
     [[nodiscard]] std::optional<ExemplarType> getExemplarType(const Exemplar::Record& exemplar) const;
@@ -117,8 +120,11 @@ private:
                                                 const Exemplar::Record& exemplar) const;
     [[nodiscard]] std::optional<DBPF::Tgi> resolveModelTgi_(const Exemplar::Record& exemplar,
                                                            const DBPF::Tgi& exemplarTgi) const;
+    void dumpRenderedThumbnail_(const DBPF::Tgi& modelTgi, uint32_t buildingInstanceId) const;
+    static std::vector<std::byte> convertBgraToRgba_(const std::vector<std::byte>& pixels);
 
     const PropertyMapper& propertyMapper_;
     const DbpfIndexService* indexService_;
     std::unique_ptr<thumb::ThumbnailRenderer> thumbnailRenderer_;
+    std::optional<std::filesystem::path> thumbnailDumpDir_;
 };
