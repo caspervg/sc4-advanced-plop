@@ -2,6 +2,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string_view>
 #include <vector>
 #include <set>
@@ -49,7 +50,8 @@ PluginConfiguration GetDefaultPluginConfiguration()
 
 void ScanAndAnalyzeExemplars(const PluginConfiguration& config,
                              spdlog::logger& logger,
-                             bool renderModelThumbnails)
+                             bool renderModelThumbnails,
+                             std::optional<fs::path> thumbnailDumpDir = std::nullopt)
 {
     try {
         logger.info("Initializing plugin scanner...");
@@ -119,7 +121,7 @@ void ScanAndAnalyzeExemplars(const PluginConfiguration& config,
         uint32_t parseErrors = 0;
         std::set<uint32_t> missingBuildingIds;
 
-        ExemplarParser parser(propertyMapper, &indexService, renderModelThumbnails);
+        ExemplarParser parser(propertyMapper, &indexService, renderModelThumbnails, thumbnailDumpDir);
         std::vector<Lot> allLots;
         std::unordered_map<uint32_t, ParsedBuildingExemplar> buildingMap;
 
@@ -372,10 +374,13 @@ int main(int argc, char* argv[])
             logger->info("  Game Plugins: {}", config.gamePluginsRoot.string());
             logger->info("  User Plugins: {}", config.userPluginsRoot.string());
 
+            std::optional<fs::path> thumbnailDumpDir;
             if (renderThumbnailsFlag) {
                 logger->info("3D thumbnail rendering enabled (Zoom 5 South, 44x44)");
+                thumbnailDumpDir = config.userPluginsRoot / "rendered_thumbnails";
+                logger->info("Dumping rendered thumbnails to {}", thumbnailDumpDir->string());
             }
-            ScanAndAnalyzeExemplars(config, *logger, renderThumbnailsFlag);
+            ScanAndAnalyzeExemplars(config, *logger, renderThumbnailsFlag, thumbnailDumpDir);
             return 0;
         }
 
