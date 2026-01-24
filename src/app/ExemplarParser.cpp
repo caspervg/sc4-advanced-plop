@@ -680,7 +680,7 @@ std::string ExemplarParser::resolveLTextTags_(std::string_view text,
 std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record& exemplar,
                                                          const DBPF::Tgi& exemplarTgi) const {
     constexpr int kZoomLevel = 5;
-    constexpr int kRotation = 2; // South
+    constexpr int kRotation = 0; // South
     auto getU32 = [](const Exemplar::Property* prop, size_t index) -> std::optional<uint32_t> {
         if (!prop || index >= prop->values.size()) {
             return std::nullopt;
