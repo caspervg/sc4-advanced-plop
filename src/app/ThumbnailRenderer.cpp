@@ -61,10 +61,8 @@ namespace thumb {
         Camera3D camera{};
         camera.projection = CAMERA_ORTHOGRAPHIC;
 
-
         camera.fovy = static_cast<float>(size) / 2.0f;
         camera.up = Vector3{0.0f, 1.0f, 0.0f};
-        // Target ~20% up from ground instead of 50% (center) to reduce empty space at bottom
         const Vector3 adjustedTarget = {center.x, 2 * center.y, center.z};
         camera.target = adjustedTarget;
 
