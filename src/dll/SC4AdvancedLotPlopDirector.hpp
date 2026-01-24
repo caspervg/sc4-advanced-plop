@@ -78,4 +78,5 @@ private:
     bool panelRegistered_{false};
     bool panelVisible_{false};
     bool shortcutRegistered_{false};
+    LotPlopPanel* panel_ = nullptr;
 };

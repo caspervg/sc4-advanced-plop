@@ -22,12 +22,14 @@ namespace UI {
     constexpr auto kTableHeight = 400.0f;
 }
 
-class LotPlopPanel final : public FilterableTablePanel, public ImGuiPanel {
+class LotPlopPanel final : public FilterableTablePanel, public ImGuiPanel {     
 public:
     explicit LotPlopPanel(SC4AdvancedLotPlopDirector* director, cIGZImGuiService* imguiService);
     void OnInit() override {}
     void OnRender() override;
     void OnShutdown() override { delete this; }
+    void SetOpen(bool open);
+    [[nodiscard]] bool IsOpen() const;
 
 private:
     void LoadIconTexture_(uint32_t buildingInstanceId, const Building& building);
@@ -49,6 +51,7 @@ private:
     std::unordered_map<uint32_t, ImGuiTexture> iconCache_;
     uint32_t lastDeviceGeneration_ = 0;
     bool texturesLoaded_ = false;
+    bool isOpen_ = false;
 
     // Filter helper
     LotFilterHelper filterHelper_;

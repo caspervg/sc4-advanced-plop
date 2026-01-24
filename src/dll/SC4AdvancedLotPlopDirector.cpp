@@ -72,12 +72,14 @@ bool SC4AdvancedLotPlopDirector::PostAppInit() {
 
         auto* panel = new LotPlopPanel(this, imguiService_);
         const ImGuiPanelDesc desc = ImGuiPanelAdapter<LotPlopPanel>::MakeDesc(
-            panel, kLotPlopPanelId, 100, false
+            panel, kLotPlopPanelId, 100, true
         );
 
         if (imguiService_->RegisterPanel(desc)) {
             panelRegistered_ = true;
             panelVisible_ = false;
+            panel_ = panel;
+            panel_->SetOpen(false);
             spdlog::info("Registered ImGui panel");
         }
     }
@@ -95,6 +97,7 @@ bool SC4AdvancedLotPlopDirector::PostAppShutdown() {
         SetLotPlopPanelVisible(false);
         imguiService_->UnregisterPanel(kLotPlopPanelId);
         panelRegistered_ = false;
+        panel_ = nullptr;
     }
 
     if (imguiService_) {
@@ -130,12 +133,12 @@ void SC4AdvancedLotPlopDirector::ToggleLotPlopPanel_() {
 }
 
 void SC4AdvancedLotPlopDirector::SetLotPlopPanelVisible(bool visible) {
-    if (!imguiService_ || !panelRegistered_) {
+    if (!imguiService_ || !panelRegistered_ || !panel_) {
         return;
     }
 
     panelVisible_ = visible;
-    imguiService_->SetPanelVisible(kLotPlopPanelId, visible);
+    panel_->SetOpen(visible);
 }
 
 bool SC4AdvancedLotPlopDirector::RegisterLotPlopShortcut_() {
