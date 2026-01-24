@@ -26,7 +26,7 @@ namespace thumb {
         }
     }
 
-    std::optional<RenderedImage> ThumbnailRenderer::renderModel(const DBPF::Tgi& tgi, uint32_t size) {
+    std::optional<RenderedImage> ThumbnailRenderer::renderModel(const DBPF::Tgi& tgi, const uint32_t size) {
         if (size == 0) {
             return std::nullopt;
         }
@@ -52,25 +52,32 @@ namespace thumb {
 
         const BoundingBox bounds = GetModelBoundingBox(modelHandle->model);
         const Vector3 sizeVec = Vector3Subtract(bounds.max, bounds.min);
-        const float span = std::max({sizeVec.x, sizeVec.y, sizeVec.z, 1.0f});
+
+        const auto maxDim = std::max(std::max(sizeVec.x, sizeVec.y), sizeVec.z);
         const Vector3 center = Vector3Scale(Vector3Add(bounds.min, bounds.max), 0.5f);
-        const float scale = 16.f / span;
+
+        const float scale = 0.95f * static_cast<float>(size) / (maxDim * 1.414f);
 
         Camera3D camera{};
         camera.projection = CAMERA_ORTHOGRAPHIC;
-        camera.up = Vector3{0.0f, 1.0f, 0.0f};
-        camera.target = center;
 
-        constexpr float kYawRad = -0.39269909f;
-        constexpr float kPitchRadZoom5 = 0.78539819f;
-        const float yaw = kYawRad;
-        const float pitch = kPitchRadZoom5;
+
+        camera.fovy = static_cast<float>(size) / 2.0f;
+        camera.up = Vector3{0.0f, 1.0f, 0.0f};
+        // Target ~20% up from ground instead of 50% (center) to reduce empty space at bottom
+        const Vector3 adjustedTarget = {center.x, 2 * center.y, center.z};
+        camera.target = adjustedTarget;
+
+        constexpr auto kYawRad = 0.785398f; // 45° (π/4) - SW view
+        constexpr auto kPitchRadZoom5 = 0.5236f; // ~30° from horizontal
         const Vector3 dir{
-            std::cos(yaw) * std::cos(pitch),
-            std::sin(pitch),
-            std::sin(yaw) * std::cos(pitch)
+            std::cos(kYawRad) * std::cos(kPitchRadZoom5),
+            std::sin(kPitchRadZoom5),
+            std::sin(kYawRad) * std::cos(kPitchRadZoom5)
         };
-        camera.position = Vector3Add(center, Vector3Scale(dir, span));
+
+        const auto camDistance = maxDim * 10.0f;
+        camera.position = Vector3Add(adjustedTarget, Vector3Scale(dir, camDistance));
 
         // Compute ortho size to tightly fit all corners after rotation
         Vector3 right = Vector3CrossProduct(dir, camera.up);
@@ -108,7 +115,7 @@ namespace thumb {
         BeginTextureMode(target);
         ClearBackground(Color{0, 0, 0, 0});
         BeginMode3D(camera);
-        const Vector3 renderScale{scale, scale, -scale}; // Flip Z to match SC4 viewer convention
+        const Vector3 renderScale{scale, scale, scale};
         rlDisableBackfaceCulling();
         DrawModelEx(modelHandle->model, Vector3Zero(), Vector3{0, 1, 0}, 0.0f,
                     renderScale, WHITE);
