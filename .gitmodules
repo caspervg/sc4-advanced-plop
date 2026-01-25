@@ -22,3 +22,9 @@
 [submodule "vendor/new-properties"]
 	path = vendor/sc4-properties
 	url = https://github.com/NAMTeam/New_Properties.xml.git
+[submodule "vendor/rlImGui"]
+	path = vendor/rlImGui
+	url = https://github.com/raylib-extras/rlImGui.git
+[submodule "vendor/ImGuiFileDialog"]
+	path = vendor/ImGuiFileDialog
+	url = https://github.com/aiekick/ImGuiFileDialog.git

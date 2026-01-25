@@ -1,6 +1,31 @@
 set(APP_NAME SC4AdvancedLotPlopCli)
+set(SERVICES_LIB_NAME AppServices)
 
-# Collect source files from app directory and services subdirectory
+# Collect service files
+file(GLOB SERVICE_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/*.cpp
+)
+
+# Create AppServices library
+add_library(${SERVICES_LIB_NAME} STATIC ${SERVICE_SOURCES})
+
+target_include_directories(${SERVICES_LIB_NAME} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/services
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include
+)
+
+target_link_libraries(${SERVICES_LIB_NAME} PUBLIC
+    spdlog::spdlog
+    SC4AdvancedLotPlopCore
+    DBPFKitLib
+    pugixml::pugixml
+    raylib
+)
+
+# Collect source files for CLI executable (excluding services)
 file(GLOB APP_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
@@ -20,6 +45,7 @@ target_include_directories(${APP_NAME} PRIVATE
 )
 
 target_link_libraries(${APP_NAME} PRIVATE
+    ${SERVICES_LIB_NAME}
     spdlog::spdlog
     SC4AdvancedLotPlopCore
     taywee::args
