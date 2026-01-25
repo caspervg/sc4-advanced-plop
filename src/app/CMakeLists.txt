@@ -6,6 +6,12 @@ file(GLOB SERVICE_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/services/*.cpp
 )
 
+# Embed PropertyMapper XML
+include(${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake)
+set(PROPERTY_MAPPER_XML "${CMAKE_SOURCE_DIR}/vendor/sc4-properties/new_properties.xml")
+set(EMBEDDED_PROPERTY_MAPPER_H "${CMAKE_CURRENT_BINARY_DIR}/EmbeddedPropertyMapper.hpp")
+embed_file("${PROPERTY_MAPPER_XML}" "${EMBEDDED_PROPERTY_MAPPER_H}" "PROPERTY_MAPPER_XML")
+
 # Create AppServices library
 add_library(${SERVICES_LIB_NAME} STATIC ${SERVICE_SOURCES})
 
@@ -26,6 +32,7 @@ endif()
 target_include_directories(${SERVICES_LIB_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/services
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include

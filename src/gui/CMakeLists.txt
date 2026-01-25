@@ -10,13 +10,11 @@ file(GLOB PANEL_SOURCES CONFIGURE_DEPENDS
 )
 
 # Vendor directories
-set(RLIMGUI_DIR "${CMAKE_SOURCE_DIR}/vendor/rlImGui")
 set(IMGUIFILEDIALOG_DIR "${CMAKE_SOURCE_DIR}/vendor/ImGuiFileDialog")
 
 add_executable(${GUI_NAME}
     ${GUI_SOURCES}
     ${PANEL_SOURCES}
-    ${RLIMGUI_DIR}/rlImGui.cpp
     ${IMGUIFILEDIALOG_DIR}/ImGuiFileDialog.cpp
 )
 
@@ -30,7 +28,6 @@ target_include_directories(${GUI_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/app
     ${CMAKE_SOURCE_DIR}/src/app/services
-    ${RLIMGUI_DIR}
     ${IMGUIFILEDIALOG_DIR}
     ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include
 )
@@ -38,11 +35,14 @@ target_include_directories(${GUI_NAME} PRIVATE
 target_link_libraries(${GUI_NAME} PRIVATE
     AppServices
     SC4AdvancedLotPlopCore
+    rlimgui
     imgui::imgui
     raylib
+    glfw
     spdlog::spdlog
     DBPFKitLib
     pugixml::pugixml
+    opengl32
 )
 
 # Windows-specific: Link required libraries

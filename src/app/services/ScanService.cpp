@@ -14,6 +14,7 @@
 #include "PropertyMapper.hpp"
 #include "../../shared/entities.hpp"
 #include "../../shared/index.hpp"
+#include "EmbeddedPropertyMapper.hpp"
 
 namespace fs = std::filesystem;
 
@@ -84,19 +85,25 @@ void ScanService::ScanThread_()
         PropertyMapper propertyMapper;
         auto mapperLoaded = false;
 
-        // Try common locations for the property mapper XML
-        std::vector<fs::path> mapperLocations{
-            fs::path("PropertyMapper.xml"),
-            fs::current_path() / "PropertyMapper.xml",
-            config_.gameRoot / "PropertyMapper.xml"
-        };
+        // Try embedded XML first
+        if (propertyMapper.loadFromString(embedded::PROPERTY_MAPPER_XML)) {
+            logger_.info("Loaded property mapper from embedded XML");
+            mapperLoaded = true;
+        } else {
+            // Fall back to external file
+            std::vector<fs::path> mapperLocations{
+                fs::path("PropertyMapper.xml"),
+                fs::current_path() / "PropertyMapper.xml",
+                config_.gameRoot / "PropertyMapper.xml"
+            };
 
-        for (const auto& loc : mapperLocations) {
-            if (fs::exists(loc)) {
-                if (propertyMapper.loadFromXml(loc)) {
-                    logger_.info("Loaded property mapper from: {}", loc.string());
-                    mapperLoaded = true;
-                    break;
+            for (const auto& loc : mapperLocations) {
+                if (fs::exists(loc)) {
+                    if (propertyMapper.loadFromXml(loc)) {
+                        logger_.info("Loaded property mapper from: {}", loc.string());
+                        mapperLoaded = true;
+                        break;
+                    }
                 }
             }
         }

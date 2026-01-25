@@ -47,6 +47,7 @@ struct PropertyInfo {
 class PropertyMapper {
 public:
     bool loadFromXml(const std::filesystem::path& xmlPath);
+    bool loadFromString(std::string_view xmlContent);
 
     [[nodiscard]] std::optional<PropertyInfo> propertyInfo(uint32_t propertyId) const;
     [[nodiscard]] std::optional<PropertyInfo> propertyInfo(const std::string& propertyName) const;
@@ -80,6 +81,8 @@ private:
     [[nodiscard]] static uint32_t parsePropertyId_(const std::string& idStr);
     [[nodiscard]] static Exemplar::ValueType parseValueType_(const std::string& typeStr);
     [[nodiscard]] static int parseCount_(const std::optional<std::string>& countStr);
+
+    void processExemplarProperties_(const ExemplarProperties& root);
 
 private:
     std::unordered_map<uint32_t, PropertyInfo> properties_;

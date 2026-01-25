@@ -33,16 +33,18 @@ ConfigPanel::ConfigPanel()
 
 void ConfigPanel::Render(AppState& state)
 {
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(600, 250), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
 
-    if (ImGui::Begin("Configuration", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize)) {
-        ImGui::Text("Game & Plugins Configuration");
-        ImGui::Separator();
+    // Title
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "SimCity 4 Plugin Scanner");
+    ImGui::Separator();
+    ImGui::Spacing();
 
         // Game Root
-        ImGui::Text("Game Root Directory:");
-        ImGui::SameLine(200);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Game Root:");
+        ImGui::SameLine(150);
+        ImGui::SetNextItemWidth(-90);
         ImGui::InputText("##gameroot", gameRootBuf_.data(), gameRootBuf_.size(), ImGuiInputTextFlags_ReadOnly);
         ImGui::SameLine();
         if (ImGui::Button("Browse##game", ImVec2(80, 0))) {
@@ -70,8 +72,10 @@ void ConfigPanel::Render(AppState& state)
         ImGui::Spacing();
 
         // User Plugins
-        ImGui::Text("User Plugins Directory:");
-        ImGui::SameLine(200);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("User Plugins:");
+        ImGui::SameLine(150);
+        ImGui::SetNextItemWidth(-90);
         ImGui::InputText("##userdir", userPluginsBuf_.data(), userPluginsBuf_.size(), ImGuiInputTextFlags_ReadOnly);
         ImGui::SameLine();
         if (ImGui::Button("Browse##user", ImVec2(80, 0))) {
@@ -99,44 +103,64 @@ void ConfigPanel::Render(AppState& state)
         ImGui::Spacing();
 
         // Locale
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("Locale:");
-        ImGui::SameLine(200);
+        ImGui::SameLine(150);
+        ImGui::SetNextItemWidth(200);
         ImGui::InputText("##locale", localeBuf_.data(), localeBuf_.size());
 
         ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
 
-        // Render thumbnails checkbox
-        ImGui::Checkbox("Render 3D Thumbnails", &renderThumbnails_);
+        // Options
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Options");
+        ImGui::Spacing();
+        ImGui::Checkbox("Render 3D Thumbnails (slower)", &renderThumbnails_);
 
         ImGui::Spacing();
         ImGui::Separator();
+        ImGui::Spacing();
 
         // Validate paths
         bool gameRootValid = fs::exists(gameRootBuf_.data());
         bool userPluginsValid = fs::exists(userPluginsBuf_.data());
         bool validPaths = gameRootValid && userPluginsValid;
 
+        // Status indicators
         if (!gameRootValid) {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Game root directory not found");
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  Game root directory not found");
+        } else {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "  Game root OK");
         }
+
         if (!userPluginsValid) {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "User plugins directory not found");
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  User plugins directory not found");
+        } else {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "  User plugins OK");
         }
 
         ImGui::Spacing();
+        ImGui::Spacing();
 
-        // Start scan button
-        if (ImGui::Button("Start Scan", ImVec2(150, 30))) {
-            if (validPaths) {
-                startButtonClicked_ = true;
-                state.pluginConfig.gameRoot = gameRootBuf_.data();
-                state.pluginConfig.gamePluginsRoot = fs::path(gameRootBuf_.data()) / "Plugins";
-                state.pluginConfig.localeDir = fs::path(localeBuf_.data());
-                state.pluginConfig.userPluginsRoot = userPluginsBuf_.data();
-                state.renderThumbnails = renderThumbnails_;
-            }
+        // Start scan button - centered and larger
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - 200) * 0.5f);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.5f, 0.1f, 1.0f));
+
+        ImGui::BeginDisabled(!validPaths);
+        if (ImGui::Button("Start Scan", ImVec2(200, 40))) {
+            startButtonClicked_ = true;
+            state.pluginConfig.gameRoot = gameRootBuf_.data();
+            state.pluginConfig.gamePluginsRoot = fs::path(gameRootBuf_.data()) / "Plugins";
+            state.pluginConfig.localeDir = fs::path(localeBuf_.data());
+            state.pluginConfig.userPluginsRoot = userPluginsBuf_.data();
+            state.renderThumbnails = renderThumbnails_;
         }
+        ImGui::EndDisabled();
 
-        ImGui::End();
-    }
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
 }

@@ -10,6 +10,9 @@
 #include "S3DStructures.h"
 #include "spdlog/spdlog.h"
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
 namespace thumb {
     namespace {
         constexpr auto kTypeIdS3D = 0x5AD0E817u;
@@ -21,8 +24,15 @@ namespace thumb {
           modelFactory_(std::make_shared<ModelFactory>()) {}
 
     ThumbnailRenderer::~ThumbnailRenderer() {
+        // Destroy cached models (which unload GPU resources) while the raylib context is still alive.
+        // Only close the window if this renderer created it; the GUI already owns a window.
         if (initialized_) {
-            CloseWindow();
+            if (ownsWindow_) {
+                modelCache_.clear();
+                CloseWindow();
+            } else {
+                modelCache_.clear();
+            }
         }
     }
 
@@ -148,10 +158,18 @@ namespace thumb {
             return true;
         }
 
+        // If a raylib window already exists (GUI path), reuse it instead of creating/closing another.
+        if (IsWindowReady()) {
+            initialized_ = true;
+            ownsWindow_ = false;
+            return true;
+        }
+
         SetTraceLogLevel(LOG_WARNING);
         SetConfigFlags(FLAG_WINDOW_HIDDEN);
         InitWindow(1, 1, "SC4ThumbnailRenderer");
         initialized_ = IsWindowReady();
+        ownsWindow_ = initialized_;
         return initialized_;
     }
 

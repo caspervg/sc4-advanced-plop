@@ -34,9 +34,6 @@ struct AppState {
     void AppendLog(const std::string& msg)
     {
         std::lock_guard lock(logMutex);
-        if (logMessages.size() >= 1000) {
-            logMessages.pop_front();
-        }
         logMessages.push_back(msg);
     }
 };

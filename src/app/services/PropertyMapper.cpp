@@ -1,6 +1,7 @@
 #include "PropertyMapper.hpp"
 
 #include "rfl/xml/load.hpp"
+#include "rfl/xml/read.hpp"
 #include "spdlog/spdlog.h"
 
 bool PropertyMapper::loadFromXml(const std::filesystem::path& xmlPath) {
@@ -9,32 +10,34 @@ bool PropertyMapper::loadFromXml(const std::filesystem::path& xmlPath) {
 
         if (!result) {
             spdlog::error("Failed to parse properties XML: {}", result.error().what());
+            return false;
         }
 
-        const auto& root = result.value();
-        for (const auto& propDef : root.properties().definitions()) {
-            PropertyInfo info{parsePropertyId_(propDef.id().get()), propDef.name().get(),
-                              parseValueType_(propDef.type().get()), parseCount_(propDef.count().get())};
-            auto propOptionList = propDef.options.get();
-            std::unordered_map<std::string, uint32_t> propOptionMap{};
-            if (!propOptionList.empty()) {
-                for (const auto& option : propOptionList) {
-                    uint32_t optionValue = parsePropertyId_(option.value().get());
-                    std::string optionLabel = option.name().get();
-                    propOptionMap[optionLabel] = optionValue;
-                }
-                info.optionNames_ = propOptionMap;
-            }
-
-            properties_[info.id] = info;
-            propertyNames_[info.name] = info.id;
-        }
-
-        spdlog::info("Loaded {} property definitions from XML", properties_.size());
+        processExemplarProperties_(result.value());
+        spdlog::info("Loaded {} property definitions from XML file", properties_.size());
         return true;
     }
     catch (const std::exception& e) {
         spdlog::error("Exception loading XML: {}", e.what());
+        return false;
+    }
+}
+
+bool PropertyMapper::loadFromString(std::string_view xmlContent) {
+    try {
+        auto result = rfl::xml::read<ExemplarProperties>(xmlContent);
+
+        if (!result) {
+            spdlog::error("Failed to parse properties XML from string: {}", result.error().what());
+            return false;
+        }
+
+        processExemplarProperties_(result.value());
+        spdlog::info("Loaded {} property definitions from embedded XML", properties_.size());
+        return true;
+    }
+    catch (const std::exception& e) {
+        spdlog::error("Exception parsing embedded XML: {}", e.what());
         return false;
     }
 }
@@ -114,4 +117,29 @@ int PropertyMapper::parseCount_(const std::optional<std::string>& countStr) {
     if (!countStr)
         return 1;
     return std::stoi(countStr.value());
+}
+
+void PropertyMapper::processExemplarProperties_(const ExemplarProperties& root) {
+    for (const auto& propDef : root.properties().definitions()) {
+        PropertyInfo info{
+            parsePropertyId_(propDef.id().get()),
+            propDef.name().get(),
+            parseValueType_(propDef.type().get()),
+            parseCount_(propDef.count().get())
+        };
+
+        auto propOptionList = propDef.options.get();
+        if (!propOptionList.empty()) {
+            std::unordered_map<std::string, uint32_t> propOptionMap;
+            for (const auto& option : propOptionList) {
+                uint32_t optionValue = parsePropertyId_(option.value().get());
+                std::string optionLabel = option.name().get();
+                propOptionMap[optionLabel] = optionValue;
+            }
+            info.optionNames_ = propOptionMap;
+        }
+
+        properties_[info.id] = info;
+        propertyNames_[info.name] = info.id;
+    }
 }

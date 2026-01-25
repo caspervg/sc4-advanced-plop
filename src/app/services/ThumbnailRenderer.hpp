@@ -36,5 +36,6 @@ namespace thumb {
         std::unordered_map<DBPF::Tgi, std::shared_ptr<LoadedModelHandle>, DBPF::TgiHash> modelCache_;
         std::unordered_set<DBPF::Tgi, DBPF::TgiHash> failedModels_;
         bool initialized_ = false;
+        bool ownsWindow_ = false;
     };
 } // namespace thumb
