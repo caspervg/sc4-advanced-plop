@@ -14,13 +14,13 @@
 
 #include <fstream>
 
+#include "DbpfIndexService.hpp"
 #include "DBPFReader.h"
 #include "ExemplarParser.hpp"
+#include "PluginLocator.hpp"
 #include "PropertyMapper.hpp"
 #include "../shared/entities.hpp"
 #include "../shared/index.hpp"
-#include "services/DbpfIndexService.hpp"
-#include "services/PluginLocator.hpp"
 
 #include <rfl/cbor.hpp>
 

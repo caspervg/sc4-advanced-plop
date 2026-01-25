@@ -6,8 +6,8 @@
 #include "ModelFactory.hpp"
 #include "raylib.h"
 #include "raymath.h"
-#include "S3DStructures.h"
 #include "rlgl.h"
+#include "S3DStructures.h"
 #include "spdlog/spdlog.h"
 
 namespace thumb {
@@ -85,11 +85,11 @@ namespace thumb {
         right = Vector3Normalize(right);
         Vector3 camUp = Vector3Normalize(Vector3CrossProduct(right, dir));
 
-        float halfWidth = 0.0f;
-        float halfHeight = 0.0f;
-        for (int xi = 0; xi < 2; ++xi) {
-            for (int yi = 0; yi < 2; ++yi) {
-                for (int zi = 0; zi < 2; ++zi) {
+        auto halfWidth = 0.0f;
+        auto halfHeight = 0.0f;
+        for (auto xi = 0; xi < 2; ++xi) {
+            for (auto yi = 0; yi < 2; ++yi) {
+                for (auto zi = 0; zi < 2; ++zi) {
                     Vector3 corner{
                         xi ? bounds.max.x : bounds.min.x,
                         yi ? bounds.max.y : bounds.min.y,
