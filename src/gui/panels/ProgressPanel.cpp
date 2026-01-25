@@ -14,8 +14,6 @@ void ProgressPanel::Render(AppState& state)
     ImGui::SetNextWindowSize(ImVec2(600, 200), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Progress", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize)) {
-        const auto& progress = state.scanProgress;
-
         ImGui::Text("Scanning plugins... %s", GetSpinnerChar_());
         spinnerFrame_++;
 
@@ -23,20 +21,20 @@ void ProgressPanel::Render(AppState& state)
 
         // Progress bars
         ImGui::Text("Files processed:");
-        float fileProgress = progress.totalFiles > 0
-                              ? static_cast<float>(progress.processedFiles) / progress.totalFiles
+        float fileProgress = state.totalFiles > 0
+                              ? static_cast<float>(state.processedFiles) / state.totalFiles
                               : 0.0f;
         ImGui::ProgressBar(fileProgress, ImVec2(-1, 0), "");
-        ImGui::Text("%u / %u files", progress.processedFiles, progress.totalFiles);
+        ImGui::Text("%u / %u files", state.processedFiles, state.totalFiles);
 
         ImGui::Spacing();
 
         // Statistics
         ImGui::Text("Statistics:");
-        ImGui::BulletText("Entries indexed: %u", progress.entriesIndexed);
-        ImGui::BulletText("Buildings found: %u", progress.buildingsFound);
-        ImGui::BulletText("Lots found: %u", progress.lotsFound);
-        ImGui::BulletText("Parse errors: %u", progress.parseErrors);
+        ImGui::BulletText("Entries indexed: %u", state.entriesIndexed);
+        ImGui::BulletText("Buildings found: %u", state.buildingsFound);
+        ImGui::BulletText("Lots found: %u", state.lotsFound);
+        ImGui::BulletText("Parse errors: %u", state.parseErrors);
 
         ImGui::Spacing();
 

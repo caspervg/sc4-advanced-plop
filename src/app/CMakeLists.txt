@@ -9,6 +9,20 @@ file(GLOB SERVICE_SOURCES CONFIGURE_DEPENDS
 # Create AppServices library
 add_library(${SERVICES_LIB_NAME} STATIC ${SERVICE_SOURCES})
 
+target_compile_definitions(${SERVICES_LIB_NAME} PUBLIC
+    NOMINMAX
+)
+
+if(WIN32)
+    target_compile_definitions(${SERVICES_LIB_NAME} PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        NOGDI
+        NOUSER
+        MMNOSOUND
+    )
+endif()
+
 target_include_directories(${SERVICES_LIB_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/services

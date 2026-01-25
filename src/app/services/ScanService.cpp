@@ -54,7 +54,7 @@ bool ScanService::isRunning() const
     return isRunning_.load();
 }
 
-ScanProgress ScanService::getProgress() const
+ScanServiceProgress ScanService::getProgress() const
 {
     std::lock_guard lock(progressMutex_);
     return progress_;

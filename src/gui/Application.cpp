@@ -30,8 +30,12 @@ void Application::StartScan_()
     }
 
     state_.scanState = ScanState::Scanning;
-    state_.scanProgress = {};
-    state_.scanResults = {};
+    state_.totalFiles = 0;
+    state_.processedFiles = 0;
+    state_.entriesIndexed = 0;
+    state_.buildingsFound = 0;
+    state_.lotsFound = 0;
+    state_.parseErrors = 0;
 
     auto logger = spdlog::get("gui");
 
@@ -49,7 +53,13 @@ void Application::UpdateProgress_()
         return;
     }
 
-    state_.scanProgress = scanService_->getProgress();
+    auto progress = scanService_->getProgress();
+    state_.totalFiles = progress.totalFiles;
+    state_.processedFiles = progress.processedFiles;
+    state_.entriesIndexed = progress.entriesIndexed;
+    state_.buildingsFound = progress.buildingsFound;
+    state_.lotsFound = progress.lotsFound;
+    state_.parseErrors = progress.parseErrors;
 
     // Check if complete
     if (!scanService_->isRunning()) {

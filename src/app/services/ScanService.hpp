@@ -18,7 +18,15 @@ namespace fs = std::filesystem;
 struct PluginConfiguration;
 struct Lot;
 
-struct ScanProgress {
+struct ScanResults {
+    uint32_t buildingsFound = 0;
+    uint32_t lotsFound = 0;
+    uint32_t parseErrors = 0;
+    fs::path outputPath;
+    std::string errorMessage;
+};
+
+struct ScanServiceProgress {
     uint32_t totalFiles = 0;
     uint32_t processedFiles = 0;
     uint32_t entriesIndexed = 0;
@@ -26,14 +34,6 @@ struct ScanProgress {
     uint32_t lotsFound = 0;
     uint32_t parseErrors = 0;
     bool done = false;
-};
-
-struct ScanResults {
-    uint32_t buildingsFound = 0;
-    uint32_t lotsFound = 0;
-    uint32_t parseErrors = 0;
-    fs::path outputPath;
-    std::string errorMessage;
 };
 
 class ScanService {
@@ -50,7 +50,7 @@ public:
     void start();
     void cancel();
     bool isRunning() const;
-    ScanProgress getProgress() const;
+    ScanServiceProgress getProgress() const;
     ScanResults getResults() const;
 
 private:
@@ -63,7 +63,7 @@ private:
     std::atomic<bool> shouldCancel_{false};
 
     mutable std::mutex progressMutex_;
-    ScanProgress progress_;
+    ScanServiceProgress progress_;
 
     mutable std::mutex resultsMutex_;
     ScanResults results_;

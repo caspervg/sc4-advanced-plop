@@ -6,28 +6,11 @@
 #include <string>
 
 #include "../shared/index.hpp"
+#include "services/ScanService.hpp"
 
 namespace fs = std::filesystem;
 
 enum class ScanState { Idle, Scanning, Complete, Error };
-
-struct ScanProgress {
-    uint32_t totalFiles = 0;
-    uint32_t processedFiles = 0;
-    uint32_t entriesIndexed = 0;
-    uint32_t buildingsFound = 0;
-    uint32_t lotsFound = 0;
-    uint32_t parseErrors = 0;
-    bool done = false;
-};
-
-struct ScanResults {
-    uint32_t buildingsFound = 0;
-    uint32_t lotsFound = 0;
-    uint32_t parseErrors = 0;
-    fs::path outputPath;
-    std::string errorMessage;
-};
 
 struct AppState {
     // Configuration
@@ -36,7 +19,12 @@ struct AppState {
 
     // Runtime state
     ScanState scanState = ScanState::Idle;
-    ScanProgress scanProgress;
+    uint32_t totalFiles = 0;
+    uint32_t processedFiles = 0;
+    uint32_t entriesIndexed = 0;
+    uint32_t buildingsFound = 0;
+    uint32_t lotsFound = 0;
+    uint32_t parseErrors = 0;
     ScanResults scanResults;
 
     // Logs (thread-safe)
