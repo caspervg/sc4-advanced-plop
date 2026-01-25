@@ -541,8 +541,8 @@ std::string ExemplarParser::resolveLTextTags_(std::string_view text,
             return std::nullopt;
         }
 
-        return std::visit([mode](const auto& value) -> std::optional<std::string> {
-            using V = std::decay_t<decltype(value)>;
+        return std::visit([mode]<typename T>(const T& value) -> std::optional<std::string> {
+            using V = std::decay_t<T>;
             if constexpr (std::is_same_v<V, std::string>) {
                 if (mode == 'd') {
                     return value;
@@ -588,7 +588,7 @@ std::string ExemplarParser::resolveLTextTags_(std::string_view text,
         }
 
         const auto token = text.substr(i + 1, end - i - 1);
-        bool replaced = false;
+        auto replaced = false;
         if (token.size() > 2 && token[1] == ':' && (token[0] == 'm' || token[0] == 'd')) {
             uint32_t propertyId = 0;
             const auto* begin = token.data() + 2;

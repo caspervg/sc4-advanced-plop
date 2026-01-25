@@ -3,7 +3,7 @@
 #include "DBPFReader.h"
 #include "ExemplarReader.h"
 #include "PropertyMapper.hpp"
-#include "services/DbpfIndexService.hpp"
+#include "DbpfIndexService.hpp"
 #include "../shared/entities.hpp"
 #include <memory>
 #include <filesystem>
