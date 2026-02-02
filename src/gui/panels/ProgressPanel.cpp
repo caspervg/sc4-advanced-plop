@@ -32,6 +32,13 @@ void ProgressPanel::Render(AppState& state)
         ImGui::ProgressBar(fileProgress, ImVec2(-1, 30), progressOverlay);
 
         ImGui::Spacing();
+        ImGui::Text("Current File:");
+        if (state.currentFile.empty()) {
+            ImGui::TextDisabled("Waiting for file...");
+        } else {
+            ImGui::TextWrapped("%s", state.currentFile.c_str());
+        }
+        ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 

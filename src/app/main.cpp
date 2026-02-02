@@ -37,8 +37,8 @@ PluginConfiguration GetDefaultPluginConfiguration()
 {
     const char* userProfile = std::getenv("USERPROFILE");
     const char* programFiles = std::getenv("PROGRAMFILES(x86)");
-    const auto gameRoot = fs::path(programFiles) / "SimCity 4 Deluxe Edition";
     if (userProfile && programFiles) {
+        const auto gameRoot = fs::path(programFiles) / "SimCity 4 Deluxe Edition";
         return PluginConfiguration{
             .gameRoot = gameRoot,
             .localeDir = "English",

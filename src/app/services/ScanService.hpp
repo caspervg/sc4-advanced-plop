@@ -33,6 +33,7 @@ struct ScanServiceProgress {
     uint32_t buildingsFound = 0;
     uint32_t lotsFound = 0;
     uint32_t parseErrors = 0;
+    std::string currentFile;
     bool done = false;
 };
 

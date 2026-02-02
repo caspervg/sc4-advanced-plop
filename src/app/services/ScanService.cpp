@@ -133,6 +133,7 @@ void ScanService::ScanThread_()
                 progress_.totalFiles = progress.totalFiles;
                 progress_.processedFiles = progress.processedFiles;
                 progress_.entriesIndexed = progress.entriesIndexed;
+                progress_.currentFile = progress.currentFile;
             }
 
             // Check if done
@@ -330,6 +331,7 @@ void ScanService::ScanThread_()
             progress_.buildingsFound = buildingsFound;
             progress_.lotsFound = lotsFound;
             progress_.parseErrors = parseErrors;
+            progress_.currentFile = finalProgress.currentFile;
             progress_.done = true;
         }
 

@@ -208,7 +208,6 @@ void DbpfIndexService::worker_() {
                 }
 
                 const auto& index = reader.GetIndex();
-                size_t entriesCount = 0;
 
                 for (const auto& entry : index) {
                     if (stop_) break;
@@ -223,12 +222,11 @@ void DbpfIndexService::worker_() {
                         tgiToFiles_[entry.tgi].push_back(filePath);
                     }
 
-                    entriesCount++;
+                    ++entriesIndexed_;
                 }
 
                 {
                     std::unique_lock lock(mutex_);
-                    entriesIndexed_ += entriesCount;
                     ++processedFiles_;
                 }
 
@@ -254,4 +252,3 @@ void DbpfIndexService::publishProgress_() {
     // Could be used to notify observers of progress
     // For now, kept simple - snapshots can be taken with snapshot()
 }
-

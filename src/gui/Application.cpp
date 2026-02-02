@@ -78,6 +78,7 @@ void Application::UpdateProgress_()
     state_.buildingsFound = progress.buildingsFound;
     state_.lotsFound = progress.lotsFound;
     state_.parseErrors = progress.parseErrors;
+    state_.currentFile = progress.currentFile;
 
     // Check if complete
     if (!scanService_->isRunning()) {

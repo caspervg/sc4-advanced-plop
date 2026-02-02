@@ -42,7 +42,6 @@ target_link_libraries(${GUI_NAME} PRIVATE
     spdlog::spdlog
     DBPFKitLib
     pugixml::pugixml
-    opengl32
 )
 
 # Windows-specific: Link required libraries
