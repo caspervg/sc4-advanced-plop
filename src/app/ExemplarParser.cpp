@@ -789,8 +789,11 @@ std::string ExemplarParser::resolveLTextTags_(std::string_view text,
 
 std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record& exemplar,
                                                           const DBPF::Tgi& exemplarTgi) const {
-    constexpr auto kZoomLevel = 5;
-    constexpr auto kRotation = 0; // South
+    constexpr auto kDesiredZoomLevel = 5;
+    constexpr auto kDesiredRotation = 0; // South
+    constexpr auto kDesiredZoomOffset = static_cast<uint32_t>(kDesiredZoomLevel - 1) * 0x100u;
+    constexpr auto kDesiredRotationOffset = static_cast<uint32_t>(kDesiredRotation) * 0x10u;
+
     auto getU32 = [](const Exemplar::Property* prop, const size_t index) -> std::optional<uint32_t> {
         if (!prop || index >= prop->values.size()) {
             return std::nullopt;
@@ -815,31 +818,31 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     };
 
     if (const auto* rkt0 = findProperty(exemplar, kRkt0PropertyId)) {
-        if (auto tgi = tgiFromList(rkt0)) {
+        // RKT0 -> One model for all zooms and rotation (True3D)
+        if (const auto tgi = tgiFromList(rkt0)) {
             return tgi;
         }
     }
 
     if (const auto* rkt1 = findProperty(exemplar, kRkt1PropertyId)) {
+        // RKT1 -> The S3D tgi will point towards the Zoom 1, South version of the 20 possible models
         if (auto tgi = tgiFromList(rkt1)) {
-            constexpr uint32_t zoomOffset = static_cast<uint32_t>(kZoomLevel - 1) * 0x100u;
-            constexpr uint32_t rotationOffset = static_cast<uint32_t>(kRotation) * 0x10u;
-            tgi->instance = tgi->instance + zoomOffset + rotationOffset;
+            tgi->instance = tgi->instance + kDesiredZoomOffset + kDesiredRotationOffset;
             return tgi;
         }
     }
 
     if (const auto* rkt5 = findProperty(exemplar, kRkt5PropertyId)) {
         if (auto tgi = tgiFromList(rkt5)) {
-            constexpr uint32_t zoomOffset = static_cast<uint32_t>(kZoomLevel - 1) * 0x100u;
-            constexpr uint32_t rotationOffset = static_cast<uint32_t>(kRotation) * 0x10u;
+            constexpr uint32_t zoomOffset = static_cast<uint32_t>(kDesiredZoomLevel - 1) * 0x100u;
+            constexpr uint32_t rotationOffset = static_cast<uint32_t>(kDesiredRotation) * 0x10u;
             tgi->instance = tgi->instance + zoomOffset + rotationOffset;
             return tgi;
         }
     }
 
     if (const auto* rkt3 = findProperty(exemplar, kRkt3PropertyId)) {
-        constexpr size_t index = 2 + static_cast<size_t>(kZoomLevel - 1);
+        constexpr size_t index = 2 + static_cast<size_t>(kDesiredZoomLevel - 1);
         if (rkt3->values.size() > index) {
             auto type = getU32(rkt3, 0).value_or(kTypeIdS3D);
             if (type == 0) {
@@ -854,8 +857,8 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     }
 
     if (const auto* rkt2 = findProperty(exemplar, kRkt2PropertyId)) {
-        constexpr size_t index = 2 + static_cast<size_t>(kZoomLevel - 1) * 4 +
-            static_cast<size_t>(kRotation);
+        constexpr size_t index = 2 + static_cast<size_t>(kDesiredZoomLevel - 1) * 4 +
+            static_cast<size_t>(kDesiredRotation);
         if (rkt2->values.size() > index) {
             const auto instance = getU32(rkt2, index);
             if (instance) {
@@ -875,10 +878,10 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
             if (type == 0) {
                 type = kTypeIdS3D;
             }
-            const auto group = getU32(rkt4, i + 6);
-            const auto instance = getU32(rkt4, i + 7);
+            const auto group = *getU32(rkt4, i + 6) + kDesiredZoomOffset;
+            const auto instance = *getU32(rkt4, i + 7) + kDesiredRotationOffset;
             if (group && instance) {
-                return DBPF::Tgi{type, *group, *instance};
+                return DBPF::Tgi{type, group, instance};
             }
         }
     }
