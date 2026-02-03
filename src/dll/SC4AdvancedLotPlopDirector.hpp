@@ -36,7 +36,7 @@ class SC4AdvancedLotPlopDirector final : public cRZMessage2COMDirector
 {
 public:
     SC4AdvancedLotPlopDirector();
-    ~SC4AdvancedLotPlopDirector() override = default;
+    ~SC4AdvancedLotPlopDirector() override;
 
     uint32_t GetDirectorID() const override;
     bool OnStart(cIGZCOM* pCOM) override;

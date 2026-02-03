@@ -41,6 +41,8 @@ SC4AdvancedLotPlopDirector::SC4AdvancedLotPlopDirector()
     spdlog::info("SC4AdvancedLotPlopDirector initialized");
 }
 
+SC4AdvancedLotPlopDirector::~SC4AdvancedLotPlopDirector() = default;
+
 uint32_t SC4AdvancedLotPlopDirector::GetDirectorID() const {
     return kSC4AdvancedLotPlopDirectorID;
 }
