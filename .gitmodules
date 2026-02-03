@@ -22,3 +22,6 @@
 [submodule "vendor/new-properties"]
 	path = vendor/sc4-properties
 	url = https://github.com/NAMTeam/New_Properties.xml.git
+[submodule "vcpkg"]
+	path = vcpkg
+	url = https://github.com/microsoft/vcpkg.git
