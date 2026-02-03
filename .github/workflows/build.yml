@@ -27,12 +27,12 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Fetch full vcpkg history
-        run: git -C vcpkg fetch --unshallow
+        run: git -C vendor/vcpkg fetch --unshallow
 
       - name: Bootstrap vcpkg
         run: |
-          ./vcpkg/bootstrap-vcpkg.bat
-          echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> $env:GITHUB_ENV
+          ./vendor/vcpkg/bootstrap-vcpkg.bat
+          echo "VCPKG_ROOT=${{ github.workspace }}/vendor/vcpkg" >> $env:GITHUB_ENV
 
       # sc4-imgui-service (32-bit) - provides imgui.dll and SC4CustomServices.dll
       - name: Build sc4-imgui-service
