@@ -1,7 +1,7 @@
 {
   "name" : "sc4-advanced-plop",
   "version-string" : "1.0.0",
-  "builtin-baseline" : "66c0373dc7fca549e5803087b9487edfe3aca0a1",
+  "builtin-baseline" : "cc73782a88db48af17f8bfb8328d4cab3d4c246f",
   "dependencies" : [ {
     "name" : "args",
     "version>=" : "6.4.7"
