@@ -41,6 +41,8 @@ SC4AdvancedLotPlopDirector::SC4AdvancedLotPlopDirector()
     spdlog::info("SC4AdvancedLotPlopDirector initialized");
 }
 
+SC4AdvancedLotPlopDirector::~SC4AdvancedLotPlopDirector() = default;
+
 uint32_t SC4AdvancedLotPlopDirector::GetDirectorID() const {
     return kSC4AdvancedLotPlopDirectorID;
 }
@@ -82,15 +84,14 @@ bool SC4AdvancedLotPlopDirector::PostAppInit() {
         LoadProps_();
         LoadFavorites_();
 
-        auto* panel = new LotPlopPanel(this, imguiService_);
+        panel_ = std::make_unique<LotPlopPanel>(this, imguiService_);
         const ImGuiPanelDesc desc = ImGuiPanelAdapter<LotPlopPanel>::MakeDesc(
-            panel, kLotPlopPanelId, 100, true
+            panel_.get(), kLotPlopPanelId, 100, true
         );
 
         if (imguiService_->RegisterPanel(desc)) {
             panelRegistered_ = true;
             panelVisible_ = false;
-            panel_ = panel;
             panel_->SetOpen(false);
             spdlog::info("Registered ImGui panel");
         }
@@ -109,7 +110,7 @@ bool SC4AdvancedLotPlopDirector::PostAppShutdown() {
         SetLotPlopPanelVisible(false);
         imguiService_->UnregisterPanel(kLotPlopPanelId);
         panelRegistered_ = false;
-        panel_ = nullptr;
+        panel_.reset();
     }
 
     if (imguiService_) {
@@ -342,7 +343,10 @@ void SC4AdvancedLotPlopDirector::PreCityShutdown_(cIGZMessage2Standard* pStandar
     SetLotPlopPanelVisible(false);
     StopPropPainting();
     pCity_ = nullptr;
-    pView3D_ = nullptr;
+    if (pView3D_) {
+        pView3D_->Release();
+        pView3D_ = nullptr;
+    }
     UnregisterLotPlopShortcut_();
     spdlog::info("City shutdown - released resources");
 }
