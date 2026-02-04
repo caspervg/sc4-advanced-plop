@@ -36,7 +36,7 @@ class SC4AdvancedLotPlopDirector final : public cRZMessage2COMDirector
 {
 public:
     SC4AdvancedLotPlopDirector();
-    ~SC4AdvancedLotPlopDirector() override = default;
+    ~SC4AdvancedLotPlopDirector() override;
 
     uint32_t GetDirectorID() const override;
     bool OnStart(cIGZCOM* pCOM) override;
@@ -95,7 +95,7 @@ private:
     bool panelRegistered_{false};
     bool panelVisible_{false};
     bool shortcutRegistered_{false};
-    LotPlopPanel* panel_ = nullptr;
+    std::unique_ptr<LotPlopPanel> panel_;
     cRZAutoRefCount<PropPainterInputControl> propPainterControl_;
     bool propPainting_{false};
 };
