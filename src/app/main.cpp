@@ -16,13 +16,14 @@
 
 #include <fstream>
 
-#include "DbpfIndexService.hpp"
+#include "../shared/entities.hpp"
+#include "../shared/index.hpp"
 #include "DBPFReader.h"
+#include "DbpfIndexService.hpp"
 #include "ExemplarParser.hpp"
 #include "PluginLocator.hpp"
 #include "PropertyMapper.hpp"
-#include "../shared/entities.hpp"
-#include "../shared/index.hpp"
+#include "Utils.hpp"
 
 #include <rfl/cbor.hpp>
 
@@ -293,6 +294,8 @@ namespace {
 
             logger.info("Scan complete: {} buildings with lots, {} lots, {} parse errors",
                         allBuildings.size(), lotsFound, parseErrors);
+
+            SanitizeStrings(allBuildings, allProps);
 
             // Export grouped building/lot data to CBOR file in user plugins directory
             if (!allBuildings.empty()) {
