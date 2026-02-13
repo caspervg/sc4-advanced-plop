@@ -24,6 +24,7 @@ target_link_libraries(${APP_NAME} PRIVATE
     SC4AdvancedLotPlopCore
     taywee::args
     DBPFKitLib
+    utf8cpp::utf8cpp
     pugixml::pugixml
     jsoncons::jsoncons
     raylib

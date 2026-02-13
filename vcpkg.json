@@ -46,6 +46,9 @@
     "name" : "glfw3",
     "version>=" : "3.4#1"
   }, {
+    "name" : "utfcpp",
+    "version>=" : "4.0.9"
+  }, {
     "name" : "wil",
     "version>=" : "1.0.250325.1"
   } ]
