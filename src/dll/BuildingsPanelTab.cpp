@@ -88,27 +88,27 @@ ImGuiTexture BuildingsPanelTab::LoadBuildingTexture_(uint64_t buildingKey) {
 
 void BuildingsPanelTab::RenderFilterUI_() {
     static char searchBuf[256] = {};
-    if (searchBuffer_ != searchBuf) {
-        std::strncpy(searchBuf, searchBuffer_.c_str(), sizeof(searchBuf) - 1);
+    if (filter_.searchBuffer != searchBuf) {
+        std::strncpy(searchBuf, filter_.searchBuffer.c_str(), sizeof(searchBuf) - 1);
         searchBuf[sizeof(searchBuf) - 1] = '\0';
     }
 
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputTextWithHint("##SearchBuildings", "Search buildings...", searchBuf, sizeof(searchBuf))) {
-        searchBuffer_ = searchBuf;
+        filter_.searchBuffer = searchBuf;
     }
 
     // Zone type filter
     const char* zoneTypes[] = {
         "Any zone", "Residential (R)", "Commercial (C)", "Industrial (I)", "Plopped", "None", "Other"
     };
-    int currentZone = selectedZoneType_.has_value() ? (selectedZoneType_.value() + 1) : 0;
+    int currentZone = filter_.selectedZoneType.has_value() ? (filter_.selectedZoneType.value() + 1) : 0;
     ImGui::SetNextItemWidth(UI::kDropdownWidth);
     if (ImGui::Combo("##ZoneType", &currentZone, zoneTypes, 7)) {
         if (currentZone == 0) {
-            selectedZoneType_.reset();
+            filter_.selectedZoneType.reset();
         } else {
-            selectedZoneType_ = static_cast<uint8_t>(currentZone - 1);
+            filter_.selectedZoneType = static_cast<uint8_t>(currentZone - 1);
         }
     }
 
@@ -116,13 +116,13 @@ void BuildingsPanelTab::RenderFilterUI_() {
 
     // Wealth filter
     const char* wealthOptions[] = {"Any wealth", "$", "$$", "$$$"};
-    int currentWealth = selectedWealthType_.has_value() ? selectedWealthType_.value() : 0;
+    int currentWealth = filter_.selectedWealthType.has_value() ? filter_.selectedWealthType.value() : 0;
     ImGui::SetNextItemWidth(UI::kDropdownWidth);
     if (ImGui::Combo("##Wealth", &currentWealth, wealthOptions, 4)) {
         if (currentWealth == 0) {
-            selectedWealthType_.reset();
+            filter_.selectedWealthType.reset();
         } else {
-            selectedWealthType_ = static_cast<uint8_t>(currentWealth);
+            filter_.selectedWealthType = static_cast<uint8_t>(currentWealth);
         }
     }
 
@@ -133,8 +133,8 @@ void BuildingsPanelTab::RenderFilterUI_() {
         "Any stage", "Plopped (255)", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"
     };
     auto currentGrowthStageIndex = 0;
-    if (selectedGrowthStage_.has_value()) {
-        uint8_t val = selectedGrowthStage_.value();
+    if (filter_.selectedGrowthStage.has_value()) {
+        uint8_t val = filter_.selectedGrowthStage.value();
         if (val == 255) {
             currentGrowthStageIndex = 1;
         } else if (val <= 15) {
@@ -144,30 +144,30 @@ void BuildingsPanelTab::RenderFilterUI_() {
     ImGui::SetNextItemWidth(UI::kDropdownWidth);
     if (ImGui::Combo("##GrowthStage", &currentGrowthStageIndex, growthStages, 18)) {
         if (currentGrowthStageIndex == 0) {
-            selectedGrowthStage_.reset();
+            filter_.selectedGrowthStage.reset();
         } else if (currentGrowthStageIndex == 1) {
-            selectedGrowthStage_ = 255;
+            filter_.selectedGrowthStage = 255;
         } else {
-            selectedGrowthStage_ = static_cast<uint8_t>(currentGrowthStageIndex - 2);
+            filter_.selectedGrowthStage = static_cast<uint8_t>(currentGrowthStageIndex - 2);
         }
     }
 
     ImGui::SameLine();
-    ImGui::Checkbox("Favorites only", &favoritesOnly_);
+    ImGui::Checkbox("Favorites only", &filter_.favoritesOnly);
 
     // Size filters
     ImGui::Text("Width:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::kSlider2Width);
-    if (ImGui::InputInt("##MinSizeX", &minSizeX_, 1, 1)) {
-        minSizeX_ = std::clamp(minSizeX_, LotSize::kMinSize, LotSize::kMaxSize);
+    if (ImGui::InputInt("##MinSizeX", &filter_.minSizeX, 1, 1)) {
+        filter_.minSizeX = std::clamp(filter_.minSizeX, LotSize::kMinSize, LotSize::kMaxSize);
     }
     ImGui::SameLine();
     ImGui::Text("to");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::kSliderWidth);
-    if (ImGui::InputInt("##MaxSizeX", &maxSizeX_, 1, 1)) {
-        maxSizeX_ = std::clamp(maxSizeX_, LotSize::kMinSize, LotSize::kMaxSize);
+    if (ImGui::InputInt("##MaxSizeX", &filter_.maxSizeX, 1, 1)) {
+        filter_.maxSizeX = std::clamp(filter_.maxSizeX, LotSize::kMinSize, LotSize::kMaxSize);
     }
 
     ImGui::SameLine();
@@ -177,15 +177,15 @@ void BuildingsPanelTab::RenderFilterUI_() {
     ImGui::Text("Depth:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::kSliderWidth);
-    if (ImGui::InputInt("##MinSizeZ", &minSizeZ_, 1, 1)) {
-        minSizeZ_ = std::clamp(minSizeZ_, LotSize::kMinSize, LotSize::kMaxSize);
+    if (ImGui::InputInt("##MinSizeZ", &filter_.minSizeZ, 1, 1)) {
+        filter_.minSizeZ = std::clamp(filter_.minSizeZ, LotSize::kMinSize, LotSize::kMaxSize);
     }
     ImGui::SameLine();
     ImGui::Text("to");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::kSliderWidth);
-    if (ImGui::InputInt("##MaxSizeZ", &maxSizeZ_, 1, 1)) {
-        maxSizeZ_ = std::clamp(maxSizeZ_, LotSize::kMinSize, LotSize::kMaxSize);
+    if (ImGui::InputInt("##MaxSizeZ", &filter_.maxSizeZ, 1, 1)) {
+        filter_.maxSizeZ = std::clamp(filter_.maxSizeZ, LotSize::kMinSize, LotSize::kMaxSize);
     }
 
     ImGui::SameLine();
@@ -193,17 +193,8 @@ void BuildingsPanelTab::RenderFilterUI_() {
     ImGui::SameLine();
 
     if (ImGui::Button("Clear filters")) {
-        searchBuffer_.clear();
+        filter_.ResetFilters();
         searchBuf[0] = '\0';
-        selectedOccupantGroups_.clear();
-        selectedZoneType_.reset();
-        selectedWealthType_.reset();
-        selectedGrowthStage_.reset();
-        favoritesOnly_ = false;
-        minSizeX_ = LotSize::kMinSize;
-        maxSizeX_ = LotSize::kMaxSize;
-        minSizeZ_ = LotSize::kMinSize;
-        maxSizeZ_ = LotSize::kMaxSize;
     }
 
     ImGui::Separator();
@@ -389,10 +380,10 @@ void BuildingsPanelTab::RenderLotRow_(const Lot& lot) {
 
 void BuildingsPanelTab::RenderOccupantGroupFilter_() {
     std::string preview;
-    if (selectedOccupantGroups_.empty()) {
+    if (filter_.selectedOccupantGroups.empty()) {
         preview = "All Occupant Groups";
     } else {
-        preview = std::to_string(selectedOccupantGroups_.size()) + " selected";
+        preview = std::to_string(filter_.selectedOccupantGroups.size()) + " selected";
     }
 
     std::function<void(const OccupantGroup&)> renderOGNode = [&](const OccupantGroup& og) {
@@ -406,12 +397,12 @@ void BuildingsPanelTab::RenderOccupantGroupFilter_() {
                 ImGui::TreePop();
             }
         } else {
-            bool isSelected = selectedOccupantGroups_.contains(og.id);
+            bool isSelected = filter_.selectedOccupantGroups.contains(og.id);
             if (ImGui::Checkbox(og.name.data(), &isSelected)) {
                 if (isSelected) {
-                    selectedOccupantGroups_.insert(og.id);
+                    filter_.selectedOccupantGroups.insert(og.id);
                 } else {
-                    selectedOccupantGroups_.erase(og.id);
+                    filter_.selectedOccupantGroups.erase(og.id);
                 }
             }
         }
@@ -429,7 +420,7 @@ void BuildingsPanelTab::RenderOccupantGroupFilter_() {
         ImGui::EndChild();
 
         if (ImGui::SmallButton("Clear OGs")) {
-            selectedOccupantGroups_.clear();
+            filter_.selectedOccupantGroups.clear();
         }
         ImGui::PopStyleVar();
     }
@@ -455,86 +446,12 @@ void BuildingsPanelTab::ApplyFilters_() {
     filteredBuildings_.clear();
     filteredBuildings_.reserve(buildings.size());
 
-    // Convert search to lowercase
-    std::string searchLower;
-    searchLower.reserve(searchBuffer_.size());
-    std::ranges::transform(searchBuffer_, std::back_inserter(searchLower),
-                           [](unsigned char c) { return std::tolower(c); });
-
     for (const auto& building : buildings) {
-        // Text filter on building name
-        if (!searchLower.empty()) {
-            std::string nameLower;
-            nameLower.reserve(building.name.size());
-            std::ranges::transform(building.name, std::back_inserter(nameLower),
-                                   [](unsigned char c) { return std::tolower(c); });
-            if (nameLower.find(searchLower) == std::string::npos) {
-                continue;
-            }
-        }
-
-        // Occupant group filter
-        if (!selectedOccupantGroups_.empty()) {
-            bool hasMatchingOG = std::ranges::any_of(building.occupantGroups,
-                                                     [this](uint32_t og) { return selectedOccupantGroups_.contains(og); });
-            if (!hasMatchingOG) {
-                continue;
-            }
-        }
-
-        // Check if any lot passes the lot-level filters
+        // A building passes if any of its lots passes all filters
         bool hasMatchingLot = std::ranges::any_of(building.lots, [&](const Lot& lot) {
-            // Zone type filter
-            if (selectedZoneType_.has_value()) {
-                const uint8_t category = selectedZoneType_.value();
-                if (!lot.zoneType.has_value()) {
-                    if (category != 4) return false; // "None" category
-                } else {
-                    const uint8_t zoneValue = lot.zoneType.value();
-                    bool matches = false;
-                    if (category == 0) matches = (zoneValue >= 0x01 && zoneValue <= 0x03); // Residential
-                    else if (category == 1) matches = (zoneValue >= 0x04 && zoneValue <= 0x06); // Commercial
-                    else if (category == 2) matches = (zoneValue >= 0x07 && zoneValue <= 0x09); // Industrial
-                    else if (category == 3) matches = (zoneValue == 0x0F); // Plopped
-                    else if (category == 4) matches = (zoneValue == 0x00); // None
-                    else if (category == 5) matches = (zoneValue >= 0x0A && zoneValue <= 0x0E); // Other
-                    if (!matches) return false;
-                }
-            }
-
-            // Wealth filter
-            if (selectedWealthType_.has_value()) {
-                if (!lot.wealthType.has_value() || lot.wealthType.value() != selectedWealthType_.value()) {
-                    return false;
-                }
-            }
-
-            // Growth stage filter
-            if (selectedGrowthStage_.has_value()) {
-                if (lot.growthStage != selectedGrowthStage_.value()) {
-                    return false;
-                }
-            }
-
-            // Size filter
-            const int effectiveMinX = std::min(minSizeX_, maxSizeX_);
-            const int effectiveMaxX = std::max(minSizeX_, maxSizeX_);
-            const int effectiveMinZ = std::min(minSizeZ_, maxSizeZ_);
-            const int effectiveMaxZ = std::max(minSizeZ_, maxSizeZ_);
-
-            if (lot.sizeX < effectiveMinX || lot.sizeX > effectiveMaxX ||
-                lot.sizeZ < effectiveMinZ || lot.sizeZ > effectiveMaxZ) {
-                return false;
-            }
-
-            // Favorites filter
-            if (favoritesOnly_) {
-                if (!favoriteLots.contains(lot.instanceId.value())) {
-                    return false;
-                }
-            }
-
-            return true;
+            LotView view{&building, &lot};
+            return filter_.PassesFilters(view) &&
+                   (!filter_.favoritesOnly || favoriteLots.contains(lot.instanceId.value()));
         });
 
         if (hasMatchingLot) {

@@ -4,11 +4,6 @@
 #include "ThumbnailCache.hpp"
 #include "public/ImGuiTexture.h"
 
-/**
- * Buildings tab with master-detail layout:
- * - Top: Buildings table with virtualized scrolling
- * - Bottom: Lots detail table for selected building
- */
 class BuildingsPanelTab : public PanelTab {
 public:
     explicit BuildingsPanelTab(SC4AdvancedLotPlopDirector* director, cIGZImGuiService* imguiService)
@@ -41,19 +36,7 @@ private:
     const Building* selectedBuilding_ = nullptr;
     std::vector<const Building*> filteredBuildings_;
 
-    // Filter state (similar to LotFilterHelper but for buildings)
-    std::string searchBuffer_;
-    std::unordered_set<uint32_t> selectedOccupantGroups_;
-    std::optional<uint8_t> selectedZoneType_;
-    std::optional<uint8_t> selectedWealthType_;
-    std::optional<uint8_t> selectedGrowthStage_;
-    bool favoritesOnly_ = false;
-
-    // Size filters
-    int minSizeX_ = LotSize::kMinSize;
-    int maxSizeX_ = LotSize::kMaxSize;
-    int minSizeZ_ = LotSize::kMinSize;
-    int maxSizeZ_ = LotSize::kMaxSize;
+    LotFilterHelper filter_;
 
     // Sorting
     bool sortDescending_ = false;
