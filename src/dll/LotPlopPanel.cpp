@@ -1,7 +1,8 @@
 #include "LotPlopPanel.hpp"
 
-#include "BuildingLotPanelTab.hpp"
+#include "BuildingsPanelTab.hpp"
 #include "imgui_impl_win32.h"
+#include "LotsPanelTab.hpp"
 #include "OccupantGroups.hpp"
 #include "PropPanelTab.hpp"
 #include "spdlog/spdlog.h"
@@ -9,7 +10,8 @@
 
 LotPlopPanel::LotPlopPanel(SC4AdvancedLotPlopDirector* director, cIGZImGuiService* imguiService)
     : director_(director), imguiService_(imguiService) {
-    tabs_.push_back(std::make_unique<BuildingLotPanelTab>(director_, imguiService_));
+    tabs_.push_back(std::make_unique<BuildingsPanelTab>(director_, imguiService_));
+    tabs_.push_back(std::make_unique<LotsPanelTab>(director_, imguiService_));
     tabs_.push_back(std::make_unique<PropPanelTab>(director_, imguiService_));
 }
 
@@ -34,7 +36,7 @@ void LotPlopPanel::OnRender() {
         }
     }
 
-    // TabBar for future extensibility (Props, Flora, etc.)
+    // Tab bar
     if (ImGui::BeginTabBar("AdvancedPlopTabs")) {
         for (const auto& tab : tabs_) {
             if (ImGui::BeginTabItem(tab->GetTabName())) {
@@ -54,4 +56,16 @@ void LotPlopPanel::SetOpen(const bool open) {
 
 bool LotPlopPanel::IsOpen() const {
     return isOpen_;
+}
+
+void LotPlopPanel::Shutdown() {
+    for (const auto& tab : tabs_) {
+        tab->OnShutdown();
+    }
+}
+
+void LotPlopPanel::Abandon() {
+    for (const auto& tab : tabs_) {
+        tab->Abandon();
+    }
 }

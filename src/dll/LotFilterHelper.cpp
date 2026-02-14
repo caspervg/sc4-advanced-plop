@@ -6,11 +6,11 @@
 
 bool LotFilterHelper::PassesFilters(const LotView& lot) const {
     return PassesTextFilter_(lot) &&
-           PassesSizeFilter_(lot) &&
-           PassesOccupantGroupFilter_(lot) &&
-           PassesZoneTypeFilter_(lot) &&
-           PassesWealthFilter_(lot) &&
-           PassesGrowthStageFilter_(lot);
+        PassesSizeFilter_(lot) &&
+        PassesOccupantGroupFilter_(lot) &&
+        PassesZoneTypeFilter_(lot) &&
+        PassesWealthFilter_(lot) &&
+        PassesGrowthStageFilter_(lot);
 }
 
 std::vector<LotView> LotFilterHelper::ApplyFiltersAndSort(
@@ -45,31 +45,32 @@ std::vector<LotView> LotFilterHelper::ApplyFiltersAndSort(
         effectiveOrder.assign(sortOrder.begin(), sortOrder.end());
     }
     else {
-        effectiveOrder.push_back({SortColumn::Name, false});
+        effectiveOrder.push_back({SortColumn::BuildingName, false});
     }
 
     // Always add a deterministic tie-breaker.
-    effectiveOrder.push_back({SortColumn::Name, false});
+    effectiveOrder.push_back({SortColumn::BuildingName, false});
 
     std::ranges::sort(filtered, [&](const LotView& a, const LotView& b) {
         for (const auto& spec : effectiveOrder) {
             int cmp = 0;
             switch (spec.column) {
-                case SortColumn::Name: {
-                    cmp = compareStrings(a.building->name, b.building->name);
-                    if (cmp == 0) {
-                        cmp = compareStrings(a.lot->name, b.lot->name);
-                    }
-                    break;
-                }
-                case SortColumn::Size: {
-                    const auto areaA = static_cast<int>(a.lot->sizeX) * static_cast<int>(a.lot->sizeZ);
-                    const auto areaB = static_cast<int>(b.lot->sizeX) * static_cast<int>(b.lot->sizeZ);
-                    cmp = compareInts(areaA, areaB);
-                    if (cmp == 0) cmp = compareInts(a.lot->sizeX, b.lot->sizeX);
-                    if (cmp == 0) cmp = compareInts(a.lot->sizeZ, b.lot->sizeZ);
-                    break;
-                }
+            case SortColumn::BuildingName: {
+                cmp = compareStrings(a.building->name, b.building->name);
+                break;
+            }
+            case SortColumn::LotName: {
+                cmp = compareStrings(a.lot->name, b.lot->name);
+                break;
+            }
+            case SortColumn::Size: {
+                const auto areaA = static_cast<int>(a.lot->sizeX) * static_cast<int>(a.lot->sizeZ);
+                const auto areaB = static_cast<int>(b.lot->sizeX) * static_cast<int>(b.lot->sizeZ);
+                cmp = compareInts(areaA, areaB);
+                if (cmp == 0) cmp = compareInts(a.lot->sizeX, b.lot->sizeX);
+                if (cmp == 0) cmp = compareInts(a.lot->sizeZ, b.lot->sizeZ);
+                break;
+            }
             }
 
             if (cmp != 0) {
@@ -169,7 +170,7 @@ bool LotFilterHelper::PassesZoneTypeFilter_(const LotView& view) const {
 
     // If lot has no zone type, it only passes if "None" is selected (category 4)
     if (!lot.zoneType.has_value()) {
-        return selectedZoneType.value() == 4;  // "None" category
+        return selectedZoneType.value() == 4; // "None" category
     }
 
     const uint8_t zoneValue = lot.zoneType.value();
@@ -183,17 +184,28 @@ bool LotFilterHelper::PassesZoneTypeFilter_(const LotView& view) const {
     // 4 = None - matches 0x00
     // 5 = Other - matches 0x0A-0x0E (Military, Airport, Seaport, Spaceport, Landfill)
 
-    if (category == 0) {  // Residential
+    if (category == 0) {
+        // Residential
         return zoneValue >= 0x01 && zoneValue <= 0x03;
-    } else if (category == 1) {  // Commercial
+    }
+    else if (category == 1) {
+        // Commercial
         return zoneValue >= 0x04 && zoneValue <= 0x06;
-    } else if (category == 2) {  // Industrial
+    }
+    else if (category == 2) {
+        // Industrial
         return zoneValue >= 0x07 && zoneValue <= 0x09;
-    } else if (category == 3) {  // Plopped
+    }
+    else if (category == 3) {
+        // Plopped
         return zoneValue == 0x0F;
-    } else if (category == 4) {  // None
+    }
+    else if (category == 4) {
+        // None
         return zoneValue == 0x00;
-    } else if (category == 5) {  // Other
+    }
+    else if (category == 5) {
+        // Other
         return zoneValue >= 0x0A && zoneValue <= 0x0E;
     }
 
@@ -222,7 +234,8 @@ bool LotFilterHelper::PassesGrowthStageFilter_(const LotView& view) const {
     return lot.growthStage == selectedGrowthStage.value();
 }
 
-bool LotFilterHelper::PassesFavoritesOnlyFilter_(const LotView& view, const std::unordered_set<uint32_t>& favorites) const {
+bool LotFilterHelper::PassesFavoritesOnlyFilter_(const LotView& view,
+                                                 const std::unordered_set<uint32_t>& favorites) const {
     // If favorites only is not enabled, show all lots
     if (!favoritesOnly) {
         return true;

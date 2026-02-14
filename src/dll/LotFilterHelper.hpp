@@ -32,12 +32,13 @@ struct LotView {
 class LotFilterHelper {
 public:
     enum class SortColumn {
-        Name,   // Building name, then lot name
+        LotName,
+        BuildingName,
         Size    // Area, then width, then depth
     };
 
     struct SortSpec {
-        SortColumn column = SortColumn::Name;
+        SortColumn column = SortColumn::BuildingName;
         bool descending = false;
     };
 

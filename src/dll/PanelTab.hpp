@@ -20,6 +20,14 @@ public:
 
     virtual void OnDeviceReset(uint32_t deviceGeneration) = 0;
 
+    // Called before the ImGui service is released during shutdown.
+    // Subclasses should release any textures/resources that depend on the service.
+    virtual void OnShutdown() {}
+
+    // Abandons all textures without calling the service.
+    // Use during DLL teardown when the service may already be destroyed.
+    virtual void Abandon() {}
+
 protected:
     SC4AdvancedLotPlopDirector* director_;
     cIGZImGuiService* imguiService_;
