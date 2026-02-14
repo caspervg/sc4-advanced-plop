@@ -42,13 +42,7 @@ SC4AdvancedLotPlopDirector::SC4AdvancedLotPlopDirector()
     spdlog::info("SC4AdvancedLotPlopDirector initialized");
 }
 
-SC4AdvancedLotPlopDirector::~SC4AdvancedLotPlopDirector() {
-    // During DLL teardown the ImGui service may already be destroyed.
-    // Abandon textures so their destructors don't call into freed memory.
-    if (panel_) {
-        panel_->Abandon();
-    }
-}
+SC4AdvancedLotPlopDirector::~SC4AdvancedLotPlopDirector() = default;
 
 uint32_t SC4AdvancedLotPlopDirector::GetDirectorID() const {
     return kSC4AdvancedLotPlopDirectorID;
