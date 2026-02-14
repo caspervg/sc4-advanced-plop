@@ -1,11 +1,10 @@
 #pragma once
-#include <unordered_map>
 #include <vector>
 #include "FilterableTablePanel.hpp"
 #include "PanelTab.hpp"
 #include "PropPainterInputControl.hpp"
 #include "PropFilterHelper.hpp"
-#include "public/ImGuiTexture.h"
+#include "ThumbnailCache.hpp"
 
 class PropPanelTab : public FilterableTablePanel, public PanelTab {
 public:
@@ -21,7 +20,7 @@ public:
     void OnDeviceReset(uint32_t deviceGeneration) override;
 
 private:
-    void LoadIconTexture_(uint64_t propKey, const Prop& prop);
+    ImGuiTexture LoadPropTexture_(uint64_t propKey);
 
     void RenderFilterUI_() override;
     void RenderTable_() override;
@@ -32,10 +31,11 @@ private:
     void RenderFavButton_(const Prop& prop) const;
     void RenderRotationModal_();
 
+    static uint64_t MakePropKey_(const Prop& prop);
+
 private:
-    std::unordered_map<uint64_t, ImGuiTexture> iconCache_;
+    ThumbnailCache<uint64_t> thumbnailCache_;
     uint32_t lastDeviceGeneration_{0};
-    bool texturesLoaded_ = false;
 
     struct PendingPaintState {
         uint32_t propId = 0;

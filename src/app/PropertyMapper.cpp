@@ -9,6 +9,7 @@ bool PropertyMapper::loadFromXml(const std::filesystem::path& xmlPath) {
 
         if (!result) {
             spdlog::error("Failed to parse properties XML: {}", result.error().what());
+            return false;
         }
 
         const auto& root = result.value();
@@ -73,16 +74,27 @@ std::optional<uint32_t> PropertyMapper::propertyOptionId(const std::string& prop
     if (!propertyId) {
         return std::nullopt;
     }
-    const auto propertyInfo = this->propertyInfo(*propertyId).value();
-    if (propertyInfo.optionNames_.contains(optionName)) {
-        return propertyInfo.optionNames_.at(optionName);
+    const auto propertyInfo = this->propertyInfo(*propertyId);
+    if (!propertyInfo) {
+        return std::nullopt;
+    }
+    if (propertyInfo->optionNames_.contains(optionName)) {
+        return propertyInfo->optionNames_.at(optionName);
     }
     return std::nullopt;
 }
 
 uint32_t PropertyMapper::parsePropertyId_(const std::string& idStr) {
     if (idStr.starts_with("0x") || idStr.starts_with("0X")) {
-        return std::stoul(idStr, nullptr, 16);
+        try {
+            return std::stoul(idStr, nullptr, 16);
+        } catch (const std::invalid_argument& e) {
+            spdlog::warn("Invalid hex property ID format: {}", idStr);
+            return 0;
+        } catch (const std::out_of_range& e) {
+            spdlog::warn("Property ID out of range: {}", idStr);
+            return 0;
+        }
     }
 
     spdlog::trace("Skipping symbolic property ID: {}", idStr);
@@ -113,5 +125,13 @@ Exemplar::ValueType PropertyMapper::parseValueType_(const std::string& typeStr) 
 int PropertyMapper::parseCount_(const std::optional<std::string>& countStr) {
     if (!countStr)
         return 1;
-    return std::stoi(countStr.value());
+    try {
+        return std::stoi(countStr.value());
+    } catch (const std::invalid_argument&) {
+        spdlog::warn("Invalid count value: {}", countStr.value());
+        return 1;
+    } catch (const std::out_of_range&) {
+        spdlog::warn("Count value out of range: {}", countStr.value());
+        return 1;
+    }
 }

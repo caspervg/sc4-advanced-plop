@@ -147,6 +147,13 @@ namespace thumb {
         mesh = {};
         mesh.vertexCount = static_cast<int>(source.vertexBuffer->vertices.size());
         mesh.triangleCount = static_cast<int>(expandedIndices.size() / 3);
+
+        // Validate vertex count to prevent overflow and excessive allocations
+        constexpr int kMaxVertexCount = 1000000; // 1 million vertices
+        if (mesh.vertexCount < 0 || mesh.vertexCount > kMaxVertexCount) {
+            return false;
+        }
+
         mesh.vertices = static_cast<float*>(MemAlloc(mesh.vertexCount * 3 * sizeof(float)));
         mesh.normals = static_cast<float*>(MemAlloc(mesh.vertexCount * 3 * sizeof(float)));
         mesh.texcoords = static_cast<float*>(MemAlloc(mesh.vertexCount * 2 * sizeof(float)));

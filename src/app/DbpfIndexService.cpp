@@ -103,14 +103,15 @@ ParseExpected<const Exemplar::Record*> DbpfIndexService::loadExemplar(const DBPF
 
     // Not in cache - need to load it
     // Find which file(s) contain this TGI
-    std::shared_lock readLock(mutex_);
-    auto tgiIt = tgiToFiles_.find(tgi);
-    if (tgiIt == tgiToFiles_.end() || tgiIt->second.empty()) {
-        return Fail("TGI not found in index");
+    std::vector<std::filesystem::path> filePaths;
+    {
+        std::shared_lock readLock(mutex_);
+        auto tgiIt = tgiToFiles_.find(tgi);
+        if (tgiIt == tgiToFiles_.end() || tgiIt->second.empty()) {
+            return Fail("TGI not found in index");
+        }
+        filePaths = tgiIt->second;
     }
-
-    const auto& filePaths = tgiIt->second;
-    readLock.unlock();
 
     // Try to load from the last file that has it
     for (const auto& filePath : std::ranges::reverse_view(filePaths)) {
@@ -173,10 +174,9 @@ DBPF::Reader* DbpfIndexService::getReader(const std::filesystem::path& filePath)
         return nullptr;
     }
 
-    // Cache it and return
-    auto* readerPtr = reader.get();
-    readerCache_[filePath] = std::move(reader);
-    return readerPtr;
+    // Cache it and return (use try_emplace to get iterator after insertion)
+    auto [insertIt, inserted] = readerCache_.try_emplace(filePath, std::move(reader));
+    return insertIt->second.get();
 }
 
 void DbpfIndexService::worker_() {

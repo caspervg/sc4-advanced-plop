@@ -321,11 +321,12 @@ std::optional<ParsedBuildingExemplar> ExemplarParser::parseBuilding(const Exempl
     }
 
     // Extract building family IDs
-    const auto familyPropId = propertyMapper_.propertyId(kBuildingFamily).value();
-    if (auto* prop = findProperty(exemplar, familyPropId)) {
-        for (size_t i = 0; i < prop->values.size(); ++i) {
-            if (auto familyId = prop->GetScalarAs<uint32_t>(i)) {
-                parsedBuildingExemplar.familyIds.push_back(*familyId);
+    if (auto familyPropId = propertyMapper_.propertyId(kBuildingFamily)) {
+        if (auto* prop = findProperty(exemplar, *familyPropId)) {
+            for (size_t i = 0; i < prop->values.size(); ++i) {
+                if (auto familyId = prop->GetScalarAs<uint32_t>(i)) {
+                    parsedBuildingExemplar.familyIds.push_back(*familyId);
+                }
             }
         }
     }
@@ -726,6 +727,9 @@ std::string ExemplarParser::resolveLTextTags_(std::string_view text,
             }
             else if constexpr (std::is_same_v<V, float>) {
                 if (mode == 'm') {
+                    if (!std::isfinite(value)) {
+                        return std::to_string(value); // Return as-is for NaN/Inf
+                    }
                     const auto rounded = static_cast<int64_t>(std::llround(value));
                     return std::string("§") + std::to_string(rounded);
                 }
@@ -877,8 +881,18 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
             if (type == 0) {
                 type = kTypeIdS3D;
             }
-            const auto group = *getU32(rkt4, i + 6) + kDesiredZoomOffset;
-            const auto instance = *getU32(rkt4, i + 7) + kDesiredRotationOffset;
+            const auto groupBase = getU32(rkt4, i + 6);
+            const auto instanceBase = getU32(rkt4, i + 7);
+            if (!groupBase || !instanceBase) {
+                continue;
+            }
+            // Check for overflow before addition
+            if (*groupBase > UINT32_MAX - kDesiredZoomOffset ||
+                *instanceBase > UINT32_MAX - kDesiredRotationOffset) {
+                continue;
+            }
+            const auto group = *groupBase + kDesiredZoomOffset;
+            const auto instance = *instanceBase + kDesiredRotationOffset;
             if (group && instance) {
                 return DBPF::Tgi{type, group, instance};
             }

@@ -1,5 +1,6 @@
 #include "PropPanelTab.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include "Constants.hpp"
 #include "rfl/visit.hpp"
@@ -15,10 +16,6 @@ void PropPanelTab::OnRender() {
     if (props.empty()) {
         ImGui::TextUnformatted("No props loaded. Please ensure props.cbor exists in the Plugins directory.");
         return;
-    }
-
-    if (iconCache_.empty()) {
-        iconCache_.reserve(props.size());
     }
 
     RenderFilterUI_();
@@ -53,22 +50,33 @@ void PropPanelTab::OnRender() {
 
 void PropPanelTab::OnDeviceReset(const uint32_t deviceGeneration) {
     if (deviceGeneration != lastDeviceGeneration_) {
-        iconCache_.clear();
-        texturesLoaded_ = false;
+        thumbnailCache_.OnDeviceReset();
         lastDeviceGeneration_ = deviceGeneration;
     }
 }
 
-void PropPanelTab::LoadIconTexture_(const uint64_t propKey, const Prop& prop) {
-    if (!imguiService_ || !prop.thumbnail.has_value()) {
-        return;
+uint64_t PropPanelTab::MakePropKey_(const Prop& prop) {
+    return (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
+}
+
+ImGuiTexture PropPanelTab::LoadPropTexture_(const uint64_t propKey) {
+    ImGuiTexture texture;
+
+    if (!imguiService_) {
+        return texture;
     }
 
-    if (iconCache_.contains(propKey)) {
-        return;
+    // Find the prop
+    const auto& props = director_->GetProps();
+    const auto it = std::ranges::find_if(props, [propKey](const Prop& p) {
+        return MakePropKey_(p) == propKey;
+    });
+
+    if (it == props.end() || !it->thumbnail.has_value()) {
+        return texture;
     }
 
-    const auto& thumbnail = prop.thumbnail.value();
+    const auto& thumbnail = it->thumbnail.value();
 
     rfl::visit([&](const auto& variant) {
         const auto& data = variant.data;
@@ -81,20 +89,15 @@ void PropPanelTab::LoadIconTexture_(const uint64_t propKey, const Prop& prop) {
 
         const size_t expectedSize = static_cast<size_t>(width) * height * 4;
         if (data.size() != expectedSize) {
-            spdlog::warn("Prop icon data size mismatch for 0x{:08X}/0x{:08X}: expected {}, got {}",
-                         prop.groupId.value(), prop.instanceId.value(), expectedSize, data.size());
+            spdlog::warn("Prop icon data size mismatch for key 0x{:016X}: expected {}, got {}",
+                         propKey, expectedSize, data.size());
             return;
         }
 
-        ImGuiTexture texture;
-        if (texture.Create(imguiService_, width, height, data.data())) {
-            iconCache_.emplace(propKey, std::move(texture));
-        }
-        else {
-            spdlog::warn("Failed to create prop texture for 0x{:08X}/0x{:08X}",
-                         prop.groupId.value(), prop.instanceId.value());
-        }
+        texture.Create(imguiService_, width, height, data.data());
     }, thumbnail);
+
+    return texture;
 }
 
 void PropPanelTab::RenderFilterUI_() {
@@ -153,10 +156,11 @@ void PropPanelTab::RenderTable_() {
 }
 
 void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredProps,
-                                        const std::unordered_set<uint64_t>& favorites) {
+                                        const std::unordered_set<uint64_t>& /*favorites*/) {
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
         ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
-        ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti;
+        ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti |
+        ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable("PropsTable", 4, tableFlags, ImVec2(0, 0))) {
         ImGui::TableSetupColumn("Thumbnail",
@@ -170,14 +174,15 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
         ImGui::TableSetupColumn("Size (m)",
                                 ImGuiTableColumnFlags_WidthFixed |
                                 ImGuiTableColumnFlags_PreferSortAscending,
-                                UI::kSizeColumnWidth * 1.5);
+                                UI::kSizeColumnWidth * 1.5f);
         ImGui::TableSetupColumn("Action",
                                 ImGuiTableColumnFlags_WidthFixed |
                                 ImGuiTableColumnFlags_NoSort,
                                 UI::kActionColumnWidth);
-
+        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 
+        // Handle sorting
         if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs && specs->SpecsCount > 0) {
             std::vector<PropFilterHelper::SortSpec> newSpecs;
             newSpecs.reserve(specs->SpecsCount);
@@ -206,63 +211,80 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
             }
         }
 
-        if (!texturesLoaded_ && imguiService_) {
-            size_t loaded = 0;
-            for (const auto& view : filteredProps) {
-                if (loaded >= kMaxIconsToLoadPerFrame) break;
-                const auto& prop = *view.prop;
-                const uint64_t key = (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
-                if (prop.thumbnail.has_value() && !iconCache_.contains(key)) {
-                    LoadIconTexture_(key, prop);
-                    loaded++;
+        // Use clipper for virtualized scrolling
+        constexpr float rowHeight = UI::kIconSize + 8.0f;
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(filteredProps.size()), rowHeight);
+
+        while (clipper.Step()) {
+            // Request texture loads for visible + margin items
+            const int prefetchStart = std::max(0, clipper.DisplayStart - ThumbnailCacheConfig::kPrefetchMargin);
+            const int prefetchEnd = std::min(static_cast<int>(filteredProps.size()),
+                                              clipper.DisplayEnd + ThumbnailCacheConfig::kPrefetchMargin);
+
+            for (int i = prefetchStart; i < prefetchEnd; ++i) {
+                const auto& prop = *filteredProps[i].prop;
+                if (prop.thumbnail.has_value()) {
+                    thumbnailCache_.RequestLoad(MakePropKey_(prop));
                 }
             }
-            if (loaded == 0) {
-                texturesLoaded_ = true;
+
+            // Render visible rows
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const auto& prop = *filteredProps[i].prop;
+                const uint64_t key = MakePropKey_(prop);
+
+                // Use instance ID for unique ImGui ID
+                ImGui::PushID(static_cast<int>(prop.instanceId.value()));
+                ImGui::TableNextRow();
+
+                // Thumbnail
+                ImGui::TableNextColumn();
+                if (void* texId = thumbnailCache_.Get(key)) {
+                    ImGui::Image(texId, ImVec2(UI::kIconSize, UI::kIconSize));
+                } else {
+                    ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
+                }
+
+                // Name
+                ImGui::TableNextColumn();
+                if (prop.visibleName.empty()) {
+                    ImGui::TextUnformatted(prop.exemplarName.c_str());
+                } else {
+                    ImGui::TextUnformatted(prop.visibleName.c_str());
+                    ImGui::TextDisabled("%s", prop.exemplarName.c_str());
+                }
+
+                // Size
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f x %.1f x %.1f", prop.width, prop.height, prop.depth);
+
+                // Action
+                ImGui::TableNextColumn();
+                if (ImGui::Button("Paint")) {
+                    if (director_->IsPropPainting() &&
+                        director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName)) {
+                        // Reuse current paint mode and rotation; no modal.
+                    } else {
+                        pendingPaint_.propId = prop.instanceId.value();
+                        pendingPaint_.propName = prop.visibleName;
+                        pendingPaint_.settings.mode = PropPaintMode::Direct;
+                        pendingPaint_.settings.rotation = 0;
+                        pendingPaint_.open = true;
+                    }
+                }
+                ImGui::SameLine();
+                RenderFavButton_(prop);
+
+                ImGui::PopID();
             }
         }
 
-        for (size_t rowIdx = 0; rowIdx < filteredProps.size(); ++rowIdx) {
-            const auto& prop = *filteredProps[rowIdx].prop;
-            const uint64_t key = (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
+        // Process load queue each frame
+        thumbnailCache_.ProcessLoadQueue([this](uint64_t key) {
+            return LoadPropTexture_(key);
+        });
 
-            ImGui::PushID(static_cast<int>(rowIdx));
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            if (iconCache_.contains(key)) {
-                ImGui::Image(iconCache_[key].GetID(), ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            else {
-                ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            ImGui::TableNextColumn();
-            if (prop.visibleName.empty()) {
-                ImGui::TextUnformatted(prop.exemplarName.c_str());
-            } else {
-                ImGui::TextUnformatted(prop.visibleName.c_str());
-                ImGui::TextDisabled("%s", prop.exemplarName.c_str());
-            }
-
-            ImGui::TableNextColumn();
-            ImGui::Text("%.1f x %.1f x %.1f", prop.width, prop.height, prop.depth);
-            ImGui::TableNextColumn();
-            if (ImGui::Button("Paint")) {
-                if (director_->IsPropPainting() &&
-                    director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName)) {
-                    // Reuse current paint mode and rotation; no modal.
-                }
-                else {
-                    pendingPaint_.propId = prop.instanceId.value();
-                    pendingPaint_.propName = prop.visibleName;
-                    pendingPaint_.settings.mode = PropPaintMode::Direct;
-                    pendingPaint_.settings.rotation = 0;
-                    pendingPaint_.open = true;
-                }
-            }
-            ImGui::SameLine();
-            RenderFavButton_(prop);
-            ImGui::PopID();
-        }
         ImGui::EndTable();
     }
 }

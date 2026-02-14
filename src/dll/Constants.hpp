@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 // UI Constants for consistent sizing across panels
 namespace UI {
     constexpr auto kSearchBarWidth = 150.0f;
@@ -16,3 +18,10 @@ namespace UI {
 }
 
 constexpr auto kMaxIconsToLoadPerFrame = 50;
+
+// Thumbnail cache configuration for virtualized scrolling
+namespace ThumbnailCacheConfig {
+    constexpr size_t kMaxCacheSize = 200;      // Max textures in memory (~1.5MB for 44x44 RGBA)
+    constexpr size_t kMaxLoadPerFrame = 10;    // Load rate limit per frame
+    constexpr int kPrefetchMargin = 5;         // Items above/below visible to prefetch
+}
