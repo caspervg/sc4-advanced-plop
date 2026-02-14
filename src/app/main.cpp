@@ -27,6 +27,8 @@
 
 #include <rfl/cbor.hpp>
 
+#include "dll/Utils.hpp"
+
 #ifndef SC4_ADVANCED_LOT_PLOP_VERSION
 #define SC4_ADVANCED_LOT_PLOP_VERSION "0.0.1"
 #endif
@@ -126,6 +128,7 @@ namespace {
             std::unordered_map<uint32_t, ParsedBuildingExemplar> buildingMap;
             std::unordered_map<uint32_t, Building> builtBuildings;
             std::unordered_set<uint64_t> seenLotKeys;
+            std::unordered_set<uint64_t> seenPropKeys;
 
             // Use the index service to get all exemplars across all files
             logger.info("Processing exemplars using type index...");
@@ -187,11 +190,17 @@ namespace {
                                 lotConfigTgis.emplace_back(filePath, tgi);
                             }
                             else if (*exemplarType == ExemplarType::Prop) {
+                                if (seenPropKeys.contains(MakeGIKey(tgi.group, tgi.instance))) {
+                                    logger.warn("Duplicate prop skipped: (group=0x{:08X}, instance=0x{:08X})",
+                                                tgi.group, tgi.instance);
+                                    continue;
+                                }
                                 if (auto prop = parser.parseProp(*exemplarResult, tgi)) {
                                     logger.trace("  Prop: {} (0x{:08X})", prop->visibleName, tgi.instance);
                                     allProps.emplace_back(
                                         parser.propFromParsed(*prop)
                                     );
+                                    seenPropKeys.insert(MakeGIKey(tgi.group, tgi.instance));
                                 }
                             }
                         }
