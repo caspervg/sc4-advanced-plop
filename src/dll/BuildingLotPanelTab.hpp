@@ -37,6 +37,6 @@ private:
     // Filter helper
     LotFilterHelper filterHelper_;
     std::vector<LotFilterHelper::SortSpec> sortSpecs_ = {
-        {LotFilterHelper::SortColumn::Name, false}
+        {LotFilterHelper::SortColumn::BuildingName, false}
     };
 };

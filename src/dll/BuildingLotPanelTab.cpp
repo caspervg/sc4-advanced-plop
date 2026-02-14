@@ -275,7 +275,7 @@ void BuildingLotPanelTab::RenderTableInternal_(const std::vector<LotView>& filte
                 switch (s.ColumnIndex) {
                 case 0:
                     newSpecs.push_back({
-                        LotFilterHelper::SortColumn::Name,
+                        LotFilterHelper::SortColumn::BuildingName,
                         s.SortDirection == ImGuiSortDirection_Descending
                     });
                     break;

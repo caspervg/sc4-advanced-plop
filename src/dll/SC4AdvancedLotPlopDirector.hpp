@@ -52,6 +52,8 @@ public:
     bool DoMessage(cIGZMessage2* pMsg) override;
 
     [[nodiscard]] const std::vector<Building>& GetBuildings() const;
+    [[nodiscard]] const std::unordered_map<uint64_t, Building>& GetBuildingsById() const;
+    [[nodiscard]] const std::unordered_map<uint64_t, Lot>& GetLotsById() const;
     [[nodiscard]] const std::vector<Prop>& GetProps() const;
     [[nodiscard]] const std::unordered_map<uint64_t, Prop>& GetPropsById() const;
     void TriggerLotPlop(uint32_t lotInstanceId) const;
@@ -80,7 +82,6 @@ private:
     void LoadFavorites_();
     void SaveFavorites_() const;
     static std::filesystem::path GetUserPluginsPath_();
-    static uint64_t MakePropKey_(uint32_t groupId, uint32_t instanceId);
 
 private:
     cIGZImGuiService* imguiService_ = nullptr;
@@ -90,6 +91,9 @@ private:
     cIGZS3DCameraService* cameraService_ = nullptr;
 
     std::vector<Building> buildings_{};
+    std::unordered_map<uint64_t, Building> buildingsById_{};
+    std::unordered_set<uint32_t> openBuildings_{};
+    std::unordered_map<uint64_t, Lot> lotsById_{};
     std::vector<Prop> props_{};
     std::unordered_map<uint64_t, Prop> propsById_{};
     std::unordered_set<uint32_t> favoriteLotIds_{};

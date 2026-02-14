@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include "Constants.hpp"
+#include "Utils.hpp"
 #include "rfl/visit.hpp"
 #include "spdlog/spdlog.h"
 
@@ -52,10 +53,6 @@ void PropPanelTab::OnDeviceReset(const uint32_t deviceGeneration) {
         thumbnailCache_.OnDeviceReset();
         lastDeviceGeneration_ = deviceGeneration;
     }
-}
-
-uint64_t PropPanelTab::MakePropKey_(const Prop& prop) {
-    return (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
 }
 
 ImGuiTexture PropPanelTab::LoadPropTexture_(uint64_t propKey) {
@@ -221,13 +218,13 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
             for (int i = prefetchStart; i < prefetchEnd; ++i) {
                 const auto& prop = *filteredProps[i].prop;
                 if (prop.thumbnail.has_value()) {
-                    thumbnailCache_.Request(MakePropKey_(prop));
+                    thumbnailCache_.Request(MakeGIKey(prop.groupId.value(), prop.instanceId.value()));
                 }
             }
 
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
                 const auto& prop = *filteredProps[i].prop;
-                const uint64_t key = MakePropKey_(prop);
+                const uint64_t key = MakeGIKey(prop.groupId.value(), prop.instanceId.value());
 
                 ImGui::PushID(static_cast<int>(key));
                 ImGui::TableNextRow();

@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "cISC4City.h"
 #include "cISC4Occupant.h"
@@ -62,6 +63,26 @@ public:
     // void ClearPreview();
 
 private:
+    enum class ControlState {
+        Uninitialized,
+        ReadyNoTarget,
+        ReadyWithTarget,
+        ActiveNoTarget,
+        ActiveDirect,
+        ActiveLine,
+        ActivePolygon,
+    };
+
+    [[nodiscard]] static bool IsActiveState_(ControlState state);
+    [[nodiscard]] static bool IsTargetActiveState_(ControlState state);
+    [[nodiscard]] static ControlState ActiveStateForMode_(PropPaintMode mode);
+    [[nodiscard]] static const char* StateToString_(ControlState state);
+    void TransitionTo_(ControlState newState, const char* reason);
+    void SyncPreviewForState_();
+    bool HandleActiveMouseDownL_(int32_t x, int32_t z, uint32_t modifiers);
+    bool HandleActiveMouseMove_(int32_t x, int32_t z, uint32_t modifiers);
+    bool HandleActiveKeyDown_(int32_t vkCode, uint32_t modifiers);
+
     bool PlacePropAt_(int32_t screenX, int32_t screenZ);
     void CreatePreviewProp_();
     void DestroyPreviewProp_();
@@ -70,10 +91,10 @@ private:
 
     cRZAutoRefCount<cISC4City> city_;
     cRZAutoRefCount<cISC4PropManager> propManager_;
+    ControlState state_ = ControlState::Uninitialized;
 
     uint32_t propIDToPaint_;
     PropPaintSettings settings_{};
-    bool isPainting_;
     cIGZS3DCameraService* cameraService_ = nullptr;
     std::function<void()> onCancel_{};
 

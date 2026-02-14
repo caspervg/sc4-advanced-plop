@@ -15,6 +15,7 @@
 #include "cRZBaseVariant.h"
 #include "LotPlopPanel.hpp"
 #include "PropPainterInputControl.hpp"
+#include "Utils.hpp"
 #include "public/cIGZS3DCameraService.h"
 #include "public/S3DCameraServiceIds.h"
 #include "rfl/cbor/load.hpp"
@@ -41,7 +42,13 @@ SC4AdvancedLotPlopDirector::SC4AdvancedLotPlopDirector()
     spdlog::info("SC4AdvancedLotPlopDirector initialized");
 }
 
-SC4AdvancedLotPlopDirector::~SC4AdvancedLotPlopDirector() = default;
+SC4AdvancedLotPlopDirector::~SC4AdvancedLotPlopDirector() {
+    // During DLL teardown the ImGui service may already be destroyed.
+    // Abandon textures so their destructors don't call into freed memory.
+    if (panel_) {
+        panel_->Abandon();
+    }
+}
 
 uint32_t SC4AdvancedLotPlopDirector::GetDirectorID() const {
     return kSC4AdvancedLotPlopDirectorID;
@@ -106,21 +113,29 @@ bool SC4AdvancedLotPlopDirector::PostAppInit() {
 bool SC4AdvancedLotPlopDirector::PreAppShutdown() { return true; }
 
 bool SC4AdvancedLotPlopDirector::PostAppShutdown() {
+    // Destroy objects that may call ImGuiService first.
+    if (propPainterControl_) {
+        StopPropPainting();
+        propPainterControl_->SetCity(nullptr);
+        propPainterControl_->Shutdown();
+        propPainterControl_.Reset();
+    }
+
     if (imguiService_ && panelRegistered_) {
         SetLotPlopPanelVisible(false);
         imguiService_->UnregisterPanel(kLotPlopPanelId);
-        panelRegistered_ = false;
-        panel_.reset();
     }
+    panelRegistered_ = false;
+    if (panel_) {
+        panel_->Shutdown(); // Release textures while the ImGui service is still alive
+    }
+    panel_.reset();
 
     if (imguiService_) {
         imguiService_->Release();
         imguiService_ = nullptr;
     }
-    if (propPainterControl_) {
-        propPainterControl_->Shutdown();
-        propPainterControl_.Reset();
-    }
+
     if (cameraService_) {
         cameraService_->Release();
         cameraService_ = nullptr;
@@ -151,6 +166,14 @@ bool SC4AdvancedLotPlopDirector::DoMessage(cIGZMessage2* pMsg) {
 
 const std::vector<Building>& SC4AdvancedLotPlopDirector::GetBuildings() const {
     return buildings_;
+}
+
+const std::unordered_map<uint64_t, Building>& SC4AdvancedLotPlopDirector::GetBuildingsById() const {
+    return buildingsById_;
+}
+
+const std::unordered_map<uint64_t, Lot>& SC4AdvancedLotPlopDirector::GetLotsById() const {
+    return lotsById_;
 }
 
 const std::vector<Prop>& SC4AdvancedLotPlopDirector::GetProps() const {
@@ -225,7 +248,7 @@ void SC4AdvancedLotPlopDirector::ToggleFavorite(uint32_t lotInstanceId) {
 }
 
 bool SC4AdvancedLotPlopDirector::IsPropFavorite(const uint32_t groupId, const uint32_t instanceId) const {
-    return favoritePropIds_.contains(MakePropKey_(groupId, instanceId));
+    return favoritePropIds_.contains(MakeGIKey(groupId, instanceId));
 }
 
 const std::unordered_set<uint64_t>& SC4AdvancedLotPlopDirector::GetFavoritePropIds() const {
@@ -233,7 +256,7 @@ const std::unordered_set<uint64_t>& SC4AdvancedLotPlopDirector::GetFavoritePropI
 }
 
 void SC4AdvancedLotPlopDirector::TogglePropFavorite(const uint32_t groupId, const uint32_t instanceId) {
-    const uint64_t key = MakePropKey_(groupId, instanceId);
+    const uint64_t key = MakeGIKey(groupId, instanceId);
     if (favoritePropIds_.contains(key)) {
         favoritePropIds_.erase(key);
         spdlog::info("Removed prop favorite: 0x{:08X}/0x{:08X}", groupId, instanceId);
@@ -245,37 +268,20 @@ void SC4AdvancedLotPlopDirector::TogglePropFavorite(const uint32_t groupId, cons
     SaveFavorites_();
 }
 
-void SC4AdvancedLotPlopDirector::SetLotPlopPanelVisible(bool visible) {
-    if (!imguiService_ || !panelRegistered_ || !panel_) {
-        return;
-    }
-
-    panelVisible_ = visible;
-    panel_->SetOpen(visible);
-}
-
 bool SC4AdvancedLotPlopDirector::StartPropPainting(uint32_t propId, const PropPaintSettings& settings,
                                                    const std::string& name) {
     if (!pCity_ || !pView3D_) {
         spdlog::warn("Cannot start prop painting: city or view not available");
         return false;
     }
-    if (propPainting_ && pView3D_ && pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
-        return SwitchPropPaintingTarget(propId, name);
-    }
 
     if (!propPainterControl_) {
         auto* control = new PropPainterInputControl();
         propPainterControl_ = control;
-
-        propPainterControl_->SetCity(pCity_);
-        propPainterControl_->SetWindow(pView3D_->AsIGZWin());
-        propPainterControl_->SetCameraService(cameraService_);
-        propPainterControl_->SetOnCancel([this]() {
-            if (propPainting_) {
-                StopPropPainting();
-            }
-        });
+        if (! propPainterControl_) {
+            spdlog::error("Failed to allocate PropPainterInputControl");
+            return false;
+        }
 
         if (!propPainterControl_->Init()) {
             spdlog::error("Failed to initialize PropPainterInputControl");
@@ -284,33 +290,29 @@ bool SC4AdvancedLotPlopDirector::StartPropPainting(uint32_t propId, const PropPa
         }
     }
 
-    propPainterControl_->SetPropToPaint(propId, settings, name);
+    propPainterControl_->SetCity(pCity_);
+    propPainterControl_->SetWindow(pView3D_->AsIGZWin());
+    propPainterControl_->SetCameraService(cameraService_);
+    propPainterControl_->SetOnCancel([this]() {
+        if (pView3D_ && propPainterControl_ &&
+            pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
+            pView3D_->RemoveCurrentViewInputControl(false);
+        }
+        propPainting_ = false;
+        spdlog::info("Stopped prop painting");
+    });
 
-    pView3D_->RemoveAllViewInputControls(false);
-    pView3D_->AddPersistentViewInputControl(propPainterControl_);
+    propPainterControl_->SetPropToPaint(propId, settings, name);
+    if (!pView3D_->SetCurrentViewInputControl(
+        propPainterControl_,
+        cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
+        spdlog::warn("Failed to set prop painter as current view input control");
+        return false;
+    }
 
     propPainting_ = true;
     spdlog::info("Started prop painting: 0x{:08X}, rotation {}", propId, settings.rotation);
     return true;
-}
-
-void SC4AdvancedLotPlopDirector::StopPropPainting() {
-    if (!pView3D_) {
-        spdlog::debug("StopPropPainting called without View3D");
-        return;
-    }
-    if (!propPainting_) {
-        spdlog::debug("StopPropPainting called while not painting");
-        return;
-    }
-
-    pView3D_->RemoveCurrentViewInputControl(false);
-    propPainting_ = false;
-    spdlog::info("Stopped prop painting");
-}
-
-bool SC4AdvancedLotPlopDirector::IsPropPainting() const {
-    return propPainting_;
 }
 
 bool SC4AdvancedLotPlopDirector::SwitchPropPaintingTarget(uint32_t propId, const std::string& name) {
@@ -322,9 +324,31 @@ bool SC4AdvancedLotPlopDirector::SwitchPropPaintingTarget(uint32_t propId, const
     }
 
     const auto& settings = propPainterControl_->GetSettings();
-    propPainterControl_->SetPropToPaint(propId, settings, name);
-    spdlog::info("Switched prop paint target: 0x{:08X}, rotation {}", propId, settings.rotation);
-    return true;
+    return StartPropPainting(propId, settings, name);
+}
+
+void SC4AdvancedLotPlopDirector::StopPropPainting() {
+    if (pView3D_ && propPainterControl_) {
+        if (pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
+            pView3D_->RemoveCurrentViewInputControl(false);
+        }
+    }
+
+    propPainting_ = false;
+    spdlog::info("Stopped prop painting");
+}
+
+bool SC4AdvancedLotPlopDirector::IsPropPainting() const {
+    return propPainting_;
+}
+
+void SC4AdvancedLotPlopDirector::SetLotPlopPanelVisible(const bool visible) {
+    if (!imguiService_ || !panelRegistered_ || !panel_) {
+        return;
+    }
+
+    panelVisible_ = visible;
+    panel_->SetOpen(visible);
 }
 
 void SC4AdvancedLotPlopDirector::PostCityInit_(const cIGZMessage2Standard* pStandardMsg) {
@@ -349,6 +373,9 @@ void SC4AdvancedLotPlopDirector::PostCityInit_(const cIGZMessage2Standard* pStan
 void SC4AdvancedLotPlopDirector::PreCityShutdown_(cIGZMessage2Standard* pStandardMsg) {
     SetLotPlopPanelVisible(false);
     StopPropPainting();
+    if (propPainterControl_) {
+        propPainterControl_->SetCity(nullptr);
+    }
     pCity_ = nullptr;
     if (pView3D_) {
         pView3D_->Release();
@@ -435,19 +462,22 @@ void SC4AdvancedLotPlopDirector::LoadLots_() {
         auto result = rfl::cbor::load<std::vector<Building>>(cborPath.string());
         if (result) {
             buildings_ = std::move(*result);
+            buildingsById_ = std::unordered_map<uint64_t, Building>(buildings_.size());
 
             size_t lotCount = 0;
             std::unordered_set<uint64_t> lotKeys;
             size_t duplicateLots = 0;
             for (const auto& b : buildings_) {
+                buildingsById_.emplace(MakeGIKey(b.groupId.value(), b.instanceId.value()), b);
                 for (const auto& lot : b.lots) {
                     ++lotCount;
-                    const uint64_t key = (static_cast<uint64_t>(lot.groupId.value()) << 32) | lot.instanceId.value();
+                    const uint64_t key = MakeGIKey(lot.groupId.value(), lot.instanceId.value());
                     if (!lotKeys.insert(key).second) {
                         ++duplicateLots;
                         spdlog::warn("Duplicate lot in CBOR: group=0x{:08X}, instance=0x{:08X}", lot.groupId.value(),
                                      lot.instanceId.value());
                     }
+                    lotsById_.emplace(key, lot);
                 }
             }
 
@@ -587,8 +617,4 @@ std::filesystem::path SC4AdvancedLotPlopDirector::GetUserPluginsPath_() {
         spdlog::error("Failed to get DLL directory: {}", e.what());
         return {};
     }
-}
-
-uint64_t SC4AdvancedLotPlopDirector::MakePropKey_(uint32_t groupId, uint32_t instanceId) {
-    return (static_cast<uint64_t>(groupId) << 32) | instanceId;
 }
