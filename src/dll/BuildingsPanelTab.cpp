@@ -1,12 +1,14 @@
 #include "BuildingsPanelTab.hpp"
 
+#include <regex>
+
 #include "OccupantGroups.hpp"
 #include "Utils.hpp"
 #include "jsoncons/staj_event.hpp"
 #include "rfl/visit.hpp"
 
 const char* BuildingsPanelTab::GetTabName() const {
-    return "Buildings";
+    return "Buildings & Lots";
 }
 
 void BuildingsPanelTab::OnRender() {
@@ -85,7 +87,7 @@ ImGuiTexture BuildingsPanelTab::LoadBuildingTexture_(uint64_t buildingKey) {
 }
 
 void BuildingsPanelTab::RenderFilterUI_() {
-        static char searchBuf[256] = {};
+    static char searchBuf[256] = {};
     if (searchBuffer_ != searchBuf) {
         std::strncpy(searchBuf, searchBuffer_.c_str(), sizeof(searchBuf) - 1);
         searchBuf[sizeof(searchBuf) - 1] = '\0';
@@ -156,14 +158,14 @@ void BuildingsPanelTab::RenderFilterUI_() {
     // Size filters
     ImGui::Text("Width:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(50.0f);
+    ImGui::SetNextItemWidth(UI::kSlider2Width);
     if (ImGui::InputInt("##MinSizeX", &minSizeX_, 1, 1)) {
         minSizeX_ = std::clamp(minSizeX_, LotSize::kMinSize, LotSize::kMaxSize);
     }
     ImGui::SameLine();
     ImGui::Text("to");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(50.0f);
+    ImGui::SetNextItemWidth(UI::kSliderWidth);
     if (ImGui::InputInt("##MaxSizeX", &maxSizeX_, 1, 1)) {
         maxSizeX_ = std::clamp(maxSizeX_, LotSize::kMinSize, LotSize::kMaxSize);
     }
@@ -174,14 +176,14 @@ void BuildingsPanelTab::RenderFilterUI_() {
 
     ImGui::Text("Depth:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(50.0f);
+    ImGui::SetNextItemWidth(UI::kSliderWidth);
     if (ImGui::InputInt("##MinSizeZ", &minSizeZ_, 1, 1)) {
         minSizeZ_ = std::clamp(minSizeZ_, LotSize::kMinSize, LotSize::kMaxSize);
     }
     ImGui::SameLine();
     ImGui::Text("to");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(50.0f);
+    ImGui::SetNextItemWidth(UI::kSliderWidth);
     if (ImGui::InputInt("##MaxSizeZ", &maxSizeZ_, 1, 1)) {
         maxSizeZ_ = std::clamp(maxSizeZ_, LotSize::kMinSize, LotSize::kMaxSize);
     }
@@ -257,7 +259,7 @@ void BuildingsPanelTab::RenderBuildingsTable_(const float tableHeight) {
             // Request texture loads for visible + margin items
             const int prefetchStart = std::max(0, clipper.DisplayStart - Cache::kPrefetchMargin);
             const int prefetchEnd = std::min(static_cast<int>(filteredBuildings_.size()),
-                                              clipper.DisplayEnd + Cache::kPrefetchMargin);
+                                             clipper.DisplayEnd + Cache::kPrefetchMargin);
 
             for (int i = prefetchStart; i < prefetchEnd; ++i) {
                 const auto& building = filteredBuildings_[i];
@@ -283,44 +285,6 @@ void BuildingsPanelTab::RenderBuildingsTable_(const float tableHeight) {
     }
 }
 
-void BuildingsPanelTab::RenderBuildingRow_(const Building& building, const bool isSelected) {
-    const uint64_t key = MakeGIKey(building.groupId.value(), building.instanceId.value());
-
-    ImGui::PushID(static_cast<int>(key));
-    ImGui::TableNextRow();
-
-    // Thumbnail column
-    ImGui::TableNextColumn();
-    auto thumbTextureId = thumbnailCache_.Get(key);
-    if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
-        ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
-    } else {
-        ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-    }
-
-    // Name column - make entire row selectable
-    ImGui::TableNextColumn();
-    if (ImGui::Selectable(building.name.c_str(), isSelected,
-                          ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
-        selectedBuilding_ = &building;
-    }
-
-    // Description column
-    ImGui::TableNextColumn();
-    if (!building.description.empty()) {
-        // std::string desc = building.description;
-        // std::ranges::replace(desc, '\n', ' ');
-        // std::ranges::replace(desc, '\r', ' ');
-        ImGui::TextWrapped(building.description.c_str());
-    }
-
-    // Lots count column
-    ImGui::TableNextColumn();
-    ImGui::Text("%zu", building.lots.size());
-
-    ImGui::PopID();
-}
-
 void BuildingsPanelTab::RenderLotsDetailTable_(const float tableHeight) {
     if (!selectedBuilding_) {
         ImGui::TextDisabled("Select a building above to see its lots");
@@ -336,19 +300,60 @@ void BuildingsPanelTab::RenderLotsDetailTable_(const float tableHeight) {
     if (ImGui::BeginTable("LotsDetailTable", 4, tableFlags, ImVec2(0, tableHeight))) {
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, UI::kSizeColumnWidth);
-        ImGui::TableSetupColumn("Stage", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+        ImGui::TableSetupColumn("Stage", ImGuiTableColumnFlags_WidthFixed, UI::kStageColumnWidth);
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort,
                                 UI::kActionColumnWidth);
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 
-        // Typically < 20 lots per building, no clipper needed
         for (const auto& lot : selectedBuilding_->lots) {
             RenderLotRow_(lot);
         }
 
         ImGui::EndTable();
     }
+}
+
+void BuildingsPanelTab::RenderBuildingRow_(const Building& building, const bool isSelected) {
+    const uint64_t key = MakeGIKey(building.groupId.value(), building.instanceId.value());
+
+    ImGui::PushID(static_cast<int>(key));
+    constexpr float rowHeight = UI::kIconSize + 8.0f;
+    ImGui::TableNextRow(0, rowHeight);
+
+    // Thumbnail column — place a full-height Selectable first so the
+    // highlight covers the entire row, then overlay the thumbnail.
+    ImGui::TableNextColumn();
+    if (ImGui::Selectable("##row", isSelected,
+                          ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap,
+                          ImVec2(0, rowHeight))) {
+        selectedBuilding_ = &building;
+    }
+    ImGui::SameLine();
+    auto thumbTextureId = thumbnailCache_.Get(key);
+    if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
+        ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
+    } else {
+        ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
+    }
+
+    // Name column
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(building.name.c_str());
+
+    // Description column
+    ImGui::TableNextColumn();
+    if (!building.description.empty()) {
+        const std::regex multiNewLinesRe("\n+");
+        const auto res = std::regex_replace(building.description, multiNewLinesRe, "\n");
+        ImGui::TextWrapped("%s", res.c_str());
+    }
+
+    // Lots count column
+    ImGui::TableNextColumn();
+    ImGui::Text("%zu", building.lots.size());
+
+    ImGui::PopID();
 }
 
 void BuildingsPanelTab::RenderLotRow_(const Lot& lot) {
@@ -380,19 +385,6 @@ void BuildingsPanelTab::RenderLotRow_(const Lot& lot) {
     RenderFavButton_(lot.instanceId.value());
 
     ImGui::PopID();
-}
-
-void BuildingsPanelTab::RenderFavButton_(const uint32_t lotInstanceId) const {
-    const bool isFavorite = director_->IsFavorite(lotInstanceId);
-    const char* label = isFavorite ? "Unstar" : "Star";
-
-    if (ImGui::SmallButton(label)) {
-        director_->ToggleFavorite(lotInstanceId);
-    }
-
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(isFavorite ? "Remove from favorites" : "Add to favorites");
-    }
 }
 
 void BuildingsPanelTab::RenderOccupantGroupFilter_() {
@@ -443,6 +435,19 @@ void BuildingsPanelTab::RenderOccupantGroupFilter_() {
     }
 }
 
+void BuildingsPanelTab::RenderFavButton_(const uint32_t lotInstanceId) const {
+    const bool isFavorite = director_->IsFavorite(lotInstanceId);
+    const char* label = isFavorite ? "Unstar" : "Star";
+
+    if (ImGui::SmallButton(label)) {
+        director_->ToggleFavorite(lotInstanceId);
+    }
+
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(isFavorite ? "Remove from favorites" : "Add to favorites");
+    }
+}
+
 void BuildingsPanelTab::ApplyFilters_() {
     const auto& buildings = director_->GetBuildings();
     const auto& favoriteLots = director_->GetFavoriteLotIds();
@@ -471,7 +476,7 @@ void BuildingsPanelTab::ApplyFilters_() {
         // Occupant group filter
         if (!selectedOccupantGroups_.empty()) {
             bool hasMatchingOG = std::ranges::any_of(building.occupantGroups,
-                [this](uint32_t og) { return selectedOccupantGroups_.contains(og); });
+                                                     [this](uint32_t og) { return selectedOccupantGroups_.contains(og); });
             if (!hasMatchingOG) {
                 continue;
             }

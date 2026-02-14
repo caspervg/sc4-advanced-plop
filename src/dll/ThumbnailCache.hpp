@@ -80,18 +80,6 @@ public:
         loading_.clear();
     }
 
-    // Abandons all textures without calling the service.
-    // Use during shutdown when the service may already be destroyed.
-    void Abandon() {
-        for (auto& [key, entry] : cache_) {
-            entry.texture.Abandon();
-        }
-        cache_.clear();
-        lruList_.clear();
-        loadQueue_.clear();
-        loading_.clear();
-    }
-
     [[nodiscard]] size_t Size() const {
         return cache_.size();
     }

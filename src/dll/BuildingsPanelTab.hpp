@@ -20,7 +20,6 @@ public:
     void OnRender() override;
     void OnDeviceReset(uint32_t deviceGeneration) override;
     void OnShutdown() override { thumbnailCache_.Clear(); }
-    void Abandon() override { thumbnailCache_.Abandon(); }
 
 private:
     ImGuiTexture LoadBuildingTexture_(uint64_t buildingKey);
