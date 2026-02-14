@@ -17,10 +17,6 @@ void PropPanelTab::OnRender() {
         return;
     }
 
-    if (iconCache_.empty()) {
-        iconCache_.reserve(props.size());
-    }
-
     RenderFilterUI_();
 
     ImGui::Separator();
@@ -53,19 +49,32 @@ void PropPanelTab::OnRender() {
 
 void PropPanelTab::OnDeviceReset(const uint32_t deviceGeneration) {
     if (deviceGeneration != lastDeviceGeneration_) {
-        iconCache_.clear();
-        texturesLoaded_ = false;
+        thumbnailCache_.OnDeviceReset();
         lastDeviceGeneration_ = deviceGeneration;
     }
 }
 
-void PropPanelTab::LoadIconTexture_(const uint64_t propKey, const Prop& prop) {
-    if (!imguiService_ || !prop.thumbnail.has_value()) {
-        return;
+uint64_t PropPanelTab::MakePropKey_(const Prop& prop) {
+    return (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
+}
+
+ImGuiTexture PropPanelTab::LoadPropTexture_(uint64_t propKey) {
+    ImGuiTexture texture;
+
+    if (!imguiService_) {
+        spdlog::warn("Could not load prop thumbnail: imguiService_ is null");
+        return texture;
     }
 
-    if (iconCache_.contains(propKey)) {
-        return;
+    const auto& propsById = director_->GetPropsById();
+    if (!propsById.contains(propKey)) {
+        spdlog::warn("Could not find prop with key 0x{:016X} in props map", propKey);
+        return texture;
+    }
+    const auto& prop = propsById.at(propKey);
+    if (!prop.thumbnail.has_value()) {
+        spdlog::warn("Prop with key 0x{:016X} has no thumbnail", propKey);
+        return texture;
     }
 
     const auto& thumbnail = prop.thumbnail.value();
@@ -81,20 +90,15 @@ void PropPanelTab::LoadIconTexture_(const uint64_t propKey, const Prop& prop) {
 
         const size_t expectedSize = static_cast<size_t>(width) * height * 4;
         if (data.size() != expectedSize) {
-            spdlog::warn("Prop icon data size mismatch for 0x{:08X}/0x{:08X}: expected {}, got {}",
-                         prop.groupId.value(), prop.instanceId.value(), expectedSize, data.size());
+            spdlog::warn("Prop icon data size mismatch for key 0x{:016X}: expected {}, got {}",
+                         propKey, expectedSize, data.size());
             return;
         }
 
-        ImGuiTexture texture;
-        if (texture.Create(imguiService_, width, height, data.data())) {
-            iconCache_.emplace(propKey, std::move(texture));
-        }
-        else {
-            spdlog::warn("Failed to create prop texture for 0x{:08X}/0x{:08X}",
-                         prop.groupId.value(), prop.instanceId.value());
-        }
+        texture.Create(imguiService_, width, height, data.data());
     }, thumbnail);
+
+    return texture;
 }
 
 void PropPanelTab::RenderFilterUI_() {
@@ -155,10 +159,11 @@ void PropPanelTab::RenderTable_() {
 void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredProps,
                                         const std::unordered_set<uint64_t>& favorites) {
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
-        ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
-        ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_ScrollY;
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody |
+        ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable("PropsTable", 4, tableFlags, ImVec2(0, 0))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Thumbnail",
                                 ImGuiTableColumnFlags_WidthFixed |
                                 ImGuiTableColumnFlags_NoSort,
@@ -175,7 +180,6 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                                 ImGuiTableColumnFlags_WidthFixed |
                                 ImGuiTableColumnFlags_NoSort,
                                 UI::kActionColumnWidth);
-
         ImGui::TableHeadersRow();
 
         if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs && specs->SpecsCount > 0) {
@@ -206,63 +210,78 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
             }
         }
 
-        if (!texturesLoaded_ && imguiService_) {
-            size_t loaded = 0;
-            for (const auto& view : filteredProps) {
-                if (loaded >= kMaxIconsToLoadPerFrame) break;
-                const auto& prop = *view.prop;
-                const uint64_t key = (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
-                if (prop.thumbnail.has_value() && !iconCache_.contains(key)) {
-                    LoadIconTexture_(key, prop);
-                    loaded++;
+        constexpr float rowHeight = UI::kIconSize;
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(filteredProps.size()), rowHeight);
+
+        while (clipper.Step()) {
+            // Request texture loads for visible and margin items
+            const int prefetchStart = std::max(0, clipper.DisplayStart - Cache::kPrefetchMargin);
+            const int prefetchEnd = std::min(static_cast<int>(filteredProps.size()), clipper.DisplayEnd + Cache::kPrefetchMargin);
+            for (int i = prefetchStart; i < prefetchEnd; ++i) {
+                const auto& prop = *filteredProps[i].prop;
+                if (prop.thumbnail.has_value()) {
+                    thumbnailCache_.Request(MakePropKey_(prop));
                 }
             }
-            if (loaded == 0) {
-                texturesLoaded_ = true;
-            }
-        }
 
-        for (size_t rowIdx = 0; rowIdx < filteredProps.size(); ++rowIdx) {
-            const auto& prop = *filteredProps[rowIdx].prop;
-            const uint64_t key = (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const auto& prop = *filteredProps[i].prop;
+                const uint64_t key = MakePropKey_(prop);
 
-            ImGui::PushID(static_cast<int>(rowIdx));
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            if (iconCache_.contains(key)) {
-                ImGui::Image(iconCache_[key].GetID(), ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            else {
-                ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            ImGui::TableNextColumn();
-            if (prop.visibleName.empty()) {
-                ImGui::TextUnformatted(prop.exemplarName.c_str());
-            } else {
-                ImGui::TextUnformatted(prop.visibleName.c_str());
-                ImGui::TextDisabled("%s", prop.exemplarName.c_str());
-            }
+                ImGui::PushID(static_cast<int>(key));
+                ImGui::TableNextRow();
 
-            ImGui::TableNextColumn();
-            ImGui::Text("%.1f x %.1f x %.1f", prop.width, prop.height, prop.depth);
-            ImGui::TableNextColumn();
-            if (ImGui::Button("Paint")) {
-                if (director_->IsPropPainting() &&
-                    director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName)) {
-                    // Reuse current paint mode and rotation; no modal.
+                // Thumbnail
+                ImGui::TableNextColumn();
+                auto thumbTextureId = thumbnailCache_.Get(key);
+                if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
+                    ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
                 }
                 else {
-                    pendingPaint_.propId = prop.instanceId.value();
-                    pendingPaint_.propName = prop.visibleName;
-                    pendingPaint_.settings.mode = PropPaintMode::Direct;
-                    pendingPaint_.settings.rotation = 0;
-                    pendingPaint_.open = true;
+                    ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
                 }
+
+                // Name
+                ImGui::TableNextColumn();
+                if (prop.visibleName.empty()) {
+                    ImGui::TextUnformatted(prop.exemplarName.c_str());
+                }
+                else {
+                    ImGui::TextUnformatted(prop.visibleName.c_str());
+                    ImGui::TextDisabled("%s", prop.exemplarName.c_str());
+                }
+
+                // Size
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f x %.1f x %.1f", prop.width, prop.height, prop.depth);
+
+                // Actions
+                ImGui::TableNextColumn();
+                if (ImGui::Button("Paint")) {
+                    if (director_->IsPropPainting() &&
+                        director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName)) {
+                        // Reuse current paint mode and rotation; no modal.
+                        }
+                    else {
+                        pendingPaint_.propId = prop.instanceId.value();
+                        pendingPaint_.propName = prop.visibleName;
+                        pendingPaint_.settings.mode = PropPaintMode::Direct;
+                        pendingPaint_.settings.rotation = 0;
+                        pendingPaint_.open = true;
+                    }
+                }
+                ImGui::SameLine();
+                RenderFavButton_(prop);
+
+                ImGui::PopID();
             }
-            ImGui::SameLine();
-            RenderFavButton_(prop);
-            ImGui::PopID();
         }
+
+        thumbnailCache_.ProcessLoadQueue([this](const uint64_t key) {
+            return LoadPropTexture_(key);
+        });
+
         ImGui::EndTable();
     }
 }
@@ -299,9 +318,12 @@ void PropPanelTab::RenderRotationModal_() {
         ImGui::Separator();
         ImGui::TextUnformatted("Rotation");
         int rotation = pendingPaint_.settings.rotation;
-        ImGui::RadioButton("0 deg", &rotation, 0); ImGui::SameLine();
-        ImGui::RadioButton("90 deg", &rotation, 1); ImGui::SameLine();
-        ImGui::RadioButton("180 deg", &rotation, 2); ImGui::SameLine();
+        ImGui::RadioButton("0 deg", &rotation, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("90 deg", &rotation, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("180 deg", &rotation, 2);
+        ImGui::SameLine();
         ImGui::RadioButton("270 deg", &rotation, 3);
         pendingPaint_.settings.rotation = rotation;
 

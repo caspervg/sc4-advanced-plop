@@ -157,6 +157,10 @@ const std::vector<Prop>& SC4AdvancedLotPlopDirector::GetProps() const {
     return props_;
 }
 
+const std::unordered_map<uint64_t, Prop>& SC4AdvancedLotPlopDirector::GetPropsById() const {
+    return propsById_;
+}
+
 void SC4AdvancedLotPlopDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
     if (!pView3D_) {
         spdlog::warn("Cannot plop: View3D not available (city not loaded?)");
@@ -474,6 +478,10 @@ void SC4AdvancedLotPlopDirector::LoadProps_() {
         if (auto result = rfl::cbor::load<std::vector<Prop>>(cborPath.string())) {
             spdlog::info("Loaded {} props from {}", result->size(), cborPath.string());
             props_ = std::move(*result);
+            propsById_ = std::unordered_map<uint64_t, Prop>(props_.size());
+            for (const auto& p : props_) {
+                propsById_.emplace((static_cast<uint64_t>(p.groupId.value()) << 32) | p.instanceId.value(), p);
+            }
         }
         else {
             spdlog::error("Failed to load props from CBOR file: {}", result.error().what());
