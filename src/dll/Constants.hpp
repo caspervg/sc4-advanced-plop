@@ -15,4 +15,10 @@ namespace UI {
     constexpr auto kMeterFloatFormat = "%.1f m";
 }
 
+namespace Cache {
+    constexpr auto kMaxSize = 250uz;
+    constexpr auto kMaxLoadPerFrame = 25;
+    constexpr auto kPrefetchMargin = 10;
+}
+
 constexpr auto kMaxIconsToLoadPerFrame = 50;

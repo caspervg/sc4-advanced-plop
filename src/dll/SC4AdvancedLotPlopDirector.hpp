@@ -53,6 +53,7 @@ public:
 
     [[nodiscard]] const std::vector<Building>& GetBuildings() const;
     [[nodiscard]] const std::vector<Prop>& GetProps() const;
+    [[nodiscard]] const std::unordered_map<uint64_t, Prop>& GetPropsById() const;
     void TriggerLotPlop(uint32_t lotInstanceId) const;
 
     // Favorites management
@@ -90,6 +91,7 @@ private:
 
     std::vector<Building> buildings_{};
     std::vector<Prop> props_{};
+    std::unordered_map<uint64_t, Prop> propsById_{};
     std::unordered_set<uint32_t> favoriteLotIds_{};
     std::unordered_set<uint64_t> favoritePropIds_{};
     bool panelRegistered_{false};
