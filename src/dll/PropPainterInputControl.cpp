@@ -82,6 +82,8 @@ void PropPainterInputControl::Activate() {
 }
 
 void PropPainterInputControl::Deactivate() {
+    DestroyPreviewProp_();
+
     if (state_ != ControlState::Uninitialized) {
         TransitionTo_(propIDToPaint_ != 0 ? ControlState::ReadyWithTarget : ControlState::ReadyNoTarget,
                       "Deactivate");
@@ -271,17 +273,6 @@ bool PropPainterInputControl::HandleActiveKeyDown_(int32_t vkCode, uint32_t modi
         return true;
     }
 
-    if (vkCode == 'H') {
-        if (!placedProps_.empty()) {
-            const auto& last = placedProps_.back();
-            const uint32_t currentHighlight = last->GetHighlight();
-            last->SetHighlight((currentHighlight + 1) % 10, true);
-            spdlog::log(spdlog::level::info, "Cycled highlight to {}", (currentHighlight + 1) % 10);
-        }
-
-        return true;
-    }
-
     if (vkCode == 'P') {
         previewSettings_.showPreview = !previewSettings_.showPreview;
         spdlog::info("Toggled preview visibility: {}", previewSettings_.showPreview);
@@ -463,7 +454,6 @@ void PropPainterInputControl::DestroyPreviewProp_() {
     }
 
     previewProp_.Reset();
-    previewOccupant_.Reset();
     previewActive_ = false;
 
     spdlog::info("Destroyed preview prop");

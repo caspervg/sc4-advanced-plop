@@ -13,8 +13,7 @@ public:
     void OnShutdown() override { delete this; }
     void SetOpen(bool open);
     [[nodiscard]] bool IsOpen() const;
-    void Shutdown();
-    void Abandon();
+    void Shutdown() const;
 
 private:
     SC4AdvancedLotPlopDirector* director_;
