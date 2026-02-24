@@ -37,6 +37,7 @@ namespace {
 
 SC4AdvancedLotPlopDirector::SC4AdvancedLotPlopDirector()
     : imguiService_(nullptr)
+      , drawService_(nullptr)
       , pView3D_(nullptr)
       , panelRegistered_(false) {
     spdlog::info("SC4AdvancedLotPlopDirector initialized");
@@ -79,6 +80,21 @@ bool SC4AdvancedLotPlopDirector::PostAppInit() {
         }
         else {
             spdlog::warn("S3D camera service not available");
+        }
+
+        if (mpFrameWork->GetSystemService(kDrawServiceID, GZIID_cIGZDrawService,
+                                          reinterpret_cast<void**>(&drawService_))) {
+            spdlog::info("Acquired draw service");
+            if (!drawService_->RegisterDrawPassCallback(
+                DrawServicePass::PreDynamic,
+                &DrawOverlayCallback_,
+                this,
+                &drawCallbackToken_)) {
+                spdlog::warn("Failed to register draw pass callback");
+            }
+        }
+        else {
+            spdlog::warn("Draw service not available");
         }
 
         LoadLots_();
@@ -125,9 +141,19 @@ bool SC4AdvancedLotPlopDirector::PostAppShutdown() {
     }
     panel_.reset();
 
+    if (drawService_ && drawCallbackToken_ != 0) {
+        drawService_->UnregisterDrawPassCallback(drawCallbackToken_);
+        drawCallbackToken_ = 0;
+    }
+
     if (imguiService_) {
         imguiService_->Release();
         imguiService_ = nullptr;
+    }
+
+    if (drawService_) {
+        drawService_->Release();
+        drawService_ = nullptr;
     }
 
     if (cameraService_) {
@@ -334,6 +360,27 @@ void SC4AdvancedLotPlopDirector::StopPropPainting() {
 
 bool SC4AdvancedLotPlopDirector::IsPropPainting() const {
     return propPainting_;
+}
+
+void SC4AdvancedLotPlopDirector::DrawOverlayCallback_(const DrawServicePass pass, const bool begin, void* pThis) {
+    if (pass != DrawServicePass::PreDynamic || begin) {
+        return;
+    }
+
+    auto* director = static_cast<SC4AdvancedLotPlopDirector*>(pThis);
+    if (!director || !director->imguiService_ || !director->propPainting_ || !director->propPainterControl_) {
+        return;
+    }
+
+    IDirect3DDevice7* device = nullptr;
+    IDirectDraw7* dd = nullptr;
+    if (!director->imguiService_->AcquireD3DInterfaces(&device, &dd)) {
+        return;
+    }
+
+    director->propPainterControl_->DrawOverlay(device);
+    device->Release();
+    dd->Release();
 }
 
 void SC4AdvancedLotPlopDirector::SetLotPlopPanelVisible(const bool visible) {

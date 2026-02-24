@@ -21,6 +21,7 @@
 #include "PropPainterInputControl.hpp"
 #include "../shared/entities.hpp"
 #include "public/cIGZImGuiService.h"
+#include "public/cIGZDrawService.h"
 #include "public/ImGuiPanel.h"
 #include "public/ImGuiPanelAdapter.h"
 #include "public/ImGuiServiceIds.h"
@@ -82,9 +83,11 @@ private:
     void LoadFavorites_();
     void SaveFavorites_() const;
     static std::filesystem::path GetUserPluginsPath_();
+    static void DrawOverlayCallback_(DrawServicePass pass, bool begin, void* pThis);
 
 private:
     cIGZImGuiService* imguiService_ = nullptr;
+    cIGZDrawService* drawService_ = nullptr;
     cRZAutoRefCount<cISC4City> pCity_;
     cISC4View3DWin* pView3D_ = nullptr;
     cRZAutoRefCount<cIGZMessageServer2> pMS2_;
@@ -104,4 +107,5 @@ private:
     std::unique_ptr<LotPlopPanel> panel_;
     cRZAutoRefCount<PropPainterInputControl> propPainterControl_;
     bool propPainting_{false};
+    uint32_t drawCallbackToken_{0};
 };
