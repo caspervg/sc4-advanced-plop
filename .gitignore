@@ -372,3 +372,4 @@ extra-info/
 plans/
 *.zip
 cmake-build-*/
+.ai-extra-info/

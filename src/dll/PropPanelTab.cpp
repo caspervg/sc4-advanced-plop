@@ -309,10 +309,8 @@ void PropPanelTab::RenderRotationModal_() {
         ImGui::TextUnformatted("Mode");
         int mode = static_cast<int>(pendingPaint_.settings.mode);
         ImGui::RadioButton("Direct paint", &mode, static_cast<int>(PropPaintMode::Direct));
-#ifdef _DEBUG
         ImGui::RadioButton("Paint along line", &mode, static_cast<int>(PropPaintMode::Line));
         ImGui::RadioButton("Paint inside polygon", &mode, static_cast<int>(PropPaintMode::Polygon));
-#endif
         pendingPaint_.settings.mode = static_cast<PropPaintMode>(mode);
 
         ImGui::Separator();
@@ -330,16 +328,21 @@ void PropPanelTab::RenderRotationModal_() {
         if (pendingPaint_.settings.mode == PropPaintMode::Line) {
             ImGui::Separator();
             ImGui::SliderFloat("Spacing (m)", &pendingPaint_.settings.spacingMeters, 0.5f, 50.0f, "%.1f");
+            ImGui::Checkbox("Align to path direction", &pendingPaint_.settings.alignToPath);
+            ImGui::SliderFloat("Lateral jitter (m)", &pendingPaint_.settings.randomOffset, 0.0f, 5.0f, "%.1f");
+            ImGui::TextWrapped("Click to add line points. Enter places props. Backspace removes the last point.");
         }
         else if (pendingPaint_.settings.mode == PropPaintMode::Polygon) {
             ImGui::Separator();
             ImGui::SliderFloat("Density (/100 m^2)", &pendingPaint_.settings.densityPer100Sqm, 0.1f, 20.0f, "%.1f");
+            ImGui::Checkbox("Random rotation", &pendingPaint_.settings.randomRotation);
+            ImGui::TextWrapped("Click to add polygon vertices. Enter fills with props. Backspace removes the last vertex.");
+        }
+        else {
+            ImGui::TextWrapped("Click to place props directly. Enter commits placed props.");
         }
 
-        const bool canStart = pendingPaint_.settings.mode == PropPaintMode::Direct;
-        if (!canStart) {
-            ImGui::TextDisabled("Line/polygon modes are not implemented yet.");
-        }
+        const bool canStart = true;
 
         if (ImGui::Button("Start") && canStart) {
             director_->StartPropPainting(pendingPaint_.propId, pendingPaint_.settings, pendingPaint_.propName);
