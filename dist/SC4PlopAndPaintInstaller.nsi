@@ -5,7 +5,9 @@
 !include "FileFunc.nsh"
 
 !define APP_NAME "SC4 Plop and Paint"
-!define APP_VERSION "0.0.6-alpha"
+!ifndef APP_VERSION
+  !define APP_VERSION "dev"
+!endif
 !define APP_TOOLS_SUBDIR "SC4PlopAndPaint"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SC4PlopAndPaint"
 !define APP_REG_KEY "Software\SC4PlopAndPaint"
@@ -40,6 +42,7 @@ Var HSummaryText
 !define MUI_FINISHPAGE_RUN_CHECKED
 
 !insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "ThirdPartyNotices.txt"
 Page Custom ConfigurePathsPage ConfigurePathsPageLeave
 Page Custom ConfigureCachePage ConfigureCachePageLeave
 Page Custom ConfigureSummaryPage
@@ -272,6 +275,7 @@ Section "Install"
   SetOutPath "$SC4ToolsDir"
   File "PropertyMapper.xml"
   File "_SC4PlopAndPaintCacheBuilder.exe"
+  File "ThirdPartyNotices.txt"
 
   WriteUninstaller "$SC4ToolsDir\Uninstall-SC4PlopAndPaint.exe"
 
@@ -376,6 +380,7 @@ Section "Uninstall"
 
   Delete "$SC4ToolsDir\PropertyMapper.xml"
   Delete "$SC4ToolsDir\_SC4PlopAndPaintCacheBuilder.exe"
+  Delete "$SC4ToolsDir\ThirdPartyNotices.txt"
   Delete "$SC4ToolsDir\Rebuild-Cache.ps1"
   Delete "$SC4ToolsDir\cache_build.log"
   Delete "$SC4ToolsDir\Uninstall-SC4PlopAndPaint.exe"
