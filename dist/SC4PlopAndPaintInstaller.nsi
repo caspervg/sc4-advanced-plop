@@ -144,6 +144,50 @@ Function ConfigurePathsPageLeave
     MessageBox MB_YESNO|MB_ICONQUESTION "Could not find '$GameRoot\Apps'. Continue anyway?" IDYES +2
     Abort
   ${EndIf}
+
+  Call CheckLargeAddressAware
+FunctionEnd
+
+Function CheckLargeAddressAware
+  ; Check IMAGE_FILE_LARGE_ADDRESS_AWARE in the SC4 exe PE header.
+  ; This flag is set by the 4GB patch, which is strongly recommended.
+  StrCpy $R0 "$GameRoot\Apps\SimCity 4.exe"
+  ${IfNot} ${FileExists} $R0
+    Return ; Can't find exe, skip check
+  ${EndIf}
+
+  FileOpen $R1 $R0 r
+  ${If} $R1 == ""
+    Return ; Can't open, skip check
+  ${EndIf}
+
+  ; Read e_lfanew (4-byte LE DWORD) at offset 0x3C.
+  FileSeek $R1 60 SET
+  FileReadByte $R1 $0
+  FileReadByte $R1 $1
+  FileReadByte $R1 $2
+  FileReadByte $R1 $3
+  IntOp $R2 $1 << 8
+  IntOp $R2 $R2 | $0
+  IntOp $0 $2 << 16
+  IntOp $R2 $R2 | $0
+  IntOp $0 $3 << 24
+  IntOp $R2 $R2 | $0
+
+  ; IMAGE_FILE_HEADER.Characteristics is at e_lfanew + 4 (PE sig) + 18 = e_lfanew + 22.
+  ; The IMAGE_FILE_LARGE_ADDRESS_AWARE flag (0x0020) is in the low byte.
+  IntOp $R2 $R2 + 22
+  FileSeek $R1 $R2 SET
+  FileReadByte $R1 $0
+  FileClose $R1
+
+  IntOp $0 $0 & 0x20
+  ${If} $0 == 0
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION \
+      "The 4GB patch does not appear to be applied to SimCity 4.$\r$\n$\r$\nWithout it the game is limited to 2GB of RAM, which may cause crashes with large plugin collections. It is strongly recommended to apply the 4GB patch before using ${APP_NAME}.$\r$\n$\r$\nContinue anyway?" \
+      IDYES +2
+    Abort
+  ${EndIf}
 FunctionEnd
 
 Function ConfigureCachePage
