@@ -307,19 +307,19 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                 }
 
                 if (ImGui::BeginPopup("AddToPalette")) {
-                    const auto& palettes = director_->GetPropPalettes();
-                    if (palettes.empty()) {
+                    const auto manualPalettes = director_->GetManualPaletteList();
+                    if (manualPalettes.empty()) {
                         ImGui::TextDisabled("No palettes yet.");
                         if (ImGui::Selectable("+ New palette...")) {
                             const std::string& baseName = prop.visibleName.empty() ? prop.exemplarName : prop.visibleName;
-                            director_->AddPropToNewPalette(prop.instanceId.value(), baseName);
+                            director_->AddPropToNewManualPalette(prop.instanceId.value(), baseName);
                             ImGui::CloseCurrentPopup();
                         }
                     }
                     else {
-                        for (size_t paletteIndex = 0; paletteIndex < palettes.size(); ++paletteIndex) {
-                            if (ImGui::Selectable(palettes[paletteIndex].name.c_str())) {
-                                director_->AddPropToPalette(prop.instanceId.value(), paletteIndex);
+                        for (const auto& [entryIndex, paletteName] : manualPalettes) {
+                            if (ImGui::Selectable(paletteName.c_str())) {
+                                director_->AddPropToManualPalette(prop.instanceId.value(), entryIndex);
                                 ImGui::CloseCurrentPopup();
                                 break;
                             }
@@ -327,34 +327,8 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                         ImGui::Separator();
                         if (ImGui::Selectable("+ New palette...")) {
                             const std::string& baseName = prop.visibleName.empty() ? prop.exemplarName : prop.visibleName;
-                            director_->AddPropToNewPalette(prop.instanceId.value(), baseName);
+                            director_->AddPropToNewManualPalette(prop.instanceId.value(), baseName);
                             ImGui::CloseCurrentPopup();
-                        }
-                    }
-
-                    if (!prop.familyIds.empty()) {
-                        ImGui::Separator();
-                        if (ImGui::BeginMenu("Create palette from family")) {
-                            const auto& familyNames = director_->GetPropFamilyNames();
-                            for (const auto& familyIdHex : prop.familyIds) {
-                                const uint32_t familyId = familyIdHex.value();
-                                std::string label;
-                                if (const auto it = familyNames.find(familyId); it != familyNames.end()) {
-                                    label = it->second + "##fam" + std::to_string(familyId);
-                                }
-                                else {
-                                    char familyHex[16];
-                                    std::snprintf(familyHex, sizeof(familyHex), "0x%08X", familyId);
-                                    label = std::string(familyHex) + "##fam" + std::to_string(familyId);
-                                }
-
-                                if (ImGui::MenuItem(label.c_str())) {
-                                    director_->AddPropFamilyToNewPalette(familyId);
-                                    ImGui::CloseCurrentPopup();
-                                    break;
-                                }
-                            }
-                            ImGui::EndMenu();
                         }
                     }
                     ImGui::EndPopup();

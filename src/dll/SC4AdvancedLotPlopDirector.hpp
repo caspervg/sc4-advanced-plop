@@ -36,6 +36,15 @@ class cIGZS3DCameraService;
 static constexpr uint32_t kSC4MessagePostCityInit = 0x26D31EC1;
 static constexpr uint32_t kSC4MessagePreCityShutdown = 0x26D31EC2;
 
+// A display-list entry for the Families tab. Computed at runtime from the
+// props cache + stored family entries; not persisted.
+struct FamilyDisplayEntry {
+    std::string name;
+    bool starred = false;
+    std::optional<uint32_t> familyId;  // absent for manual palettes
+    int storedIndex = -1;              // index into familyEntries_, or -1 if no stored data
+};
+
 class SC4AdvancedLotPlopDirector final : public cRZMessage2COMDirector
 {
 public:
@@ -63,24 +72,35 @@ public:
     [[nodiscard]] const std::unordered_map<uint32_t, std::string>& GetPropFamilyNames() const;
     void TriggerLotPlop(uint32_t lotInstanceId) const;
 
-    // Favorites management
+    // Lot/prop favorites
     [[nodiscard]] bool IsFavorite(uint32_t lotInstanceId) const;
     [[nodiscard]] const std::unordered_set<uint32_t>& GetFavoriteLotIds() const;
     void ToggleFavorite(uint32_t lotInstanceId);
     [[nodiscard]] bool IsPropFavorite(uint32_t groupId, uint32_t instanceId) const;
     [[nodiscard]] const std::unordered_set<uint64_t>& GetFavoritePropIds() const;
     void TogglePropFavorite(uint32_t groupId, uint32_t instanceId);
-    [[nodiscard]] const std::vector<PropPalette>& GetPropPalettes() const;
-    std::vector<PropPalette>& GetPropPalettes();
-    [[nodiscard]] size_t GetActivePropPaletteIndex() const;
-    void SetActivePropPaletteIndex(size_t index);
-    [[nodiscard]] const PropPalette* GetActivePropPalette() const;
-    bool AddPropToPalette(uint32_t propID, size_t paletteIndex);
-    void AddPropToNewPalette(uint32_t propID, const std::string& baseName);
-    bool AddPropFamilyToNewPalette(uint32_t familyID);
-    bool CreatePropPalette(const std::string& name);
-    bool DeletePropPalette(size_t paletteIndex);
-    bool RenamePropPalette(size_t paletteIndex, const std::string& newName);
+
+    // Families tab: read
+    [[nodiscard]] const std::vector<FamilyDisplayEntry>& GetFamilyDisplayList() const;
+    [[nodiscard]] size_t GetActiveFamilyIndex() const;
+    void SetActiveFamilyIndex(size_t index);
+    [[nodiscard]] const FamilyEntry* GetActiveFamilyEntry() const;
+    [[nodiscard]] const FamilyEntry* GetStoredFamilyEntry(size_t displayIndex) const;
+    [[nodiscard]] std::vector<PaletteEntry> ResolveFamilyProps(size_t displayIndex) const;
+
+    // Families tab: mutations
+    void SetFamilyStarred(size_t displayIndex, bool starred);
+    void SetFamilyPropWeight(size_t displayIndex, uint32_t propID, float weight);
+    void SetFamilyPropExcluded(size_t displayIndex, uint32_t propID, bool excluded);
+    bool CreateManualPalette(const std::string& name);
+    bool DeleteFamilyEntry(size_t displayIndex);
+    bool RenameFamilyEntry(size_t displayIndex, const std::string& newName);
+
+    // Props tab: add props to manual palettes
+    [[nodiscard]] std::vector<std::pair<size_t, std::string>> GetManualPaletteList() const;
+    bool AddPropToManualPalette(uint32_t propID, size_t familyEntryIndex);
+    void AddPropToNewManualPalette(uint32_t propID, const std::string& baseName);
+
     void SaveFavoritesNow() const;
     bool StartPropPainting(uint32_t propId, const PropPaintSettings& settings, const std::string& name);
     bool SwitchPropPaintingTarget(uint32_t propId, const std::string& name);
@@ -98,6 +118,8 @@ private:
     void LoadProps_();
     void LoadFavorites_();
     void SaveFavorites_() const;
+    void BuildFamilyDisplayList_();
+    FamilyEntry& GetOrCreateStoredEntry_(size_t displayIndex);
     static std::filesystem::path GetUserPluginsPath_();
     static void DrawOverlayCallback_(DrawServicePass pass, bool begin, void* pThis);
     [[nodiscard]] const Prop* FindPropByInstanceId_(uint32_t propID) const;
@@ -117,11 +139,13 @@ private:
     std::unordered_map<uint64_t, Lot> lotsById_{};
     std::vector<Prop> props_{};
     std::unordered_map<uint64_t, Prop> propsById_{};
-    std::unordered_map<uint32_t, std::string> propFamilyNames_{};
+    std::vector<PropFamilyInfo> propFamilies_{};           // all families from cache
+    std::unordered_map<uint32_t, std::string> propFamilyNames_{};  // id → display name (named only)
     std::unordered_set<uint32_t> favoriteLotIds_{};
     std::unordered_set<uint64_t> favoritePropIds_{};
-    std::vector<PropPalette> propPalettes_{};
-    size_t activePropPaletteIndex_{0};
+    std::vector<FamilyEntry> familyEntries_{};             // persisted: overrides + manual palettes
+    std::vector<FamilyDisplayEntry> familyDisplayList_{};  // computed, not persisted
+    size_t activeFamilyDisplayIndex_{0};
     bool panelRegistered_{false};
     bool panelVisible_{false};
     bool shortcutRegistered_{false};

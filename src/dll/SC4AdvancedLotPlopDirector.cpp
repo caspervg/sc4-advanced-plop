@@ -295,180 +295,299 @@ void SC4AdvancedLotPlopDirector::TogglePropFavorite(const uint32_t groupId, cons
     SaveFavorites_();
 }
 
-const std::vector<PropPalette>& SC4AdvancedLotPlopDirector::GetPropPalettes() const {
-    return propPalettes_;
+const std::vector<FamilyDisplayEntry>& SC4AdvancedLotPlopDirector::GetFamilyDisplayList() const {
+    return familyDisplayList_;
 }
 
-std::vector<PropPalette>& SC4AdvancedLotPlopDirector::GetPropPalettes() {
-    return propPalettes_;
+size_t SC4AdvancedLotPlopDirector::GetActiveFamilyIndex() const {
+    return activeFamilyDisplayIndex_;
 }
 
-size_t SC4AdvancedLotPlopDirector::GetActivePropPaletteIndex() const {
-    return activePropPaletteIndex_;
-}
-
-void SC4AdvancedLotPlopDirector::SetActivePropPaletteIndex(const size_t index) {
-    if (propPalettes_.empty()) {
-        activePropPaletteIndex_ = 0;
+void SC4AdvancedLotPlopDirector::SetActiveFamilyIndex(const size_t index) {
+    if (familyDisplayList_.empty()) {
+        activeFamilyDisplayIndex_ = 0;
         return;
     }
-
-    activePropPaletteIndex_ = std::min(index, propPalettes_.size() - 1);
+    activeFamilyDisplayIndex_ = std::min(index, familyDisplayList_.size() - 1);
 }
 
-const PropPalette* SC4AdvancedLotPlopDirector::GetActivePropPalette() const {
-    if (propPalettes_.empty() || activePropPaletteIndex_ >= propPalettes_.size()) {
-        return nullptr;
-    }
-
-    return &propPalettes_[activePropPaletteIndex_];
+const FamilyEntry* SC4AdvancedLotPlopDirector::GetActiveFamilyEntry() const {
+    return GetStoredFamilyEntry(activeFamilyDisplayIndex_);
 }
 
-bool SC4AdvancedLotPlopDirector::CreatePropPalette(const std::string& name) {
-    if (name.empty()) {
-        return false;
-    }
+const FamilyEntry* SC4AdvancedLotPlopDirector::GetStoredFamilyEntry(const size_t displayIndex) const {
+    if (displayIndex >= familyDisplayList_.size()) return nullptr;
+    const int idx = familyDisplayList_[displayIndex].storedIndex;
+    if (idx < 0 || static_cast<size_t>(idx) >= familyEntries_.size()) return nullptr;
+    return &familyEntries_[idx];
+}
 
-    for (const auto& palette : propPalettes_) {
-        if (palette.name == name) {
-            return false;
+std::vector<PaletteEntry> SC4AdvancedLotPlopDirector::ResolveFamilyProps(const size_t displayIndex) const {
+    if (displayIndex >= familyDisplayList_.size()) return {};
+    const auto& de = familyDisplayList_[displayIndex];
+
+    if (de.familyId.has_value()) {
+        const uint32_t famId = *de.familyId;
+        std::unordered_map<uint32_t, float> weightOverrides;
+        std::unordered_set<uint32_t> excludedIds;
+        std::unordered_set<uint32_t> pinnedIds;
+
+        if (de.storedIndex >= 0 && static_cast<size_t>(de.storedIndex) < familyEntries_.size()) {
+            for (const auto& cfg : familyEntries_[de.storedIndex].propConfigs) {
+                const uint32_t propId = cfg.propID.value();
+                if (cfg.excluded) excludedIds.insert(propId);
+                else weightOverrides[propId] = cfg.weight;
+                if (cfg.pinned) pinnedIds.insert(propId);
+            }
         }
-    }
 
-    PropPalette palette;
-    palette.name = name;
-    propPalettes_.push_back(std::move(palette));
-    activePropPaletteIndex_ = propPalettes_.size() - 1;
-    SaveFavorites_();
-    return true;
-}
-
-bool SC4AdvancedLotPlopDirector::DeletePropPalette(const size_t paletteIndex) {
-    if (paletteIndex >= propPalettes_.size()) {
-        return false;
-    }
-
-    propPalettes_.erase(propPalettes_.begin() + static_cast<std::ptrdiff_t>(paletteIndex));
-    if (propPalettes_.empty()) {
-        activePropPaletteIndex_ = 0;
+        std::vector<PaletteEntry> result;
+        std::unordered_set<uint32_t> seenIds;
+        for (const auto& prop : props_) {
+            if (!std::any_of(prop.familyIds.begin(), prop.familyIds.end(),
+                [famId](const rfl::Hex<uint32_t>& id) { return id.value() == famId; })) {
+                continue;
+            }
+            const uint32_t propId = prop.instanceId.value();
+            if (excludedIds.count(propId)) continue;
+            seenIds.insert(propId);
+            float weight = 1.0f;
+            if (const auto it = weightOverrides.find(propId); it != weightOverrides.end()) weight = it->second;
+            result.push_back({rfl::Hex<uint32_t>(propId), weight});
+        }
+        for (const uint32_t pinnedId : pinnedIds) {
+            if (!seenIds.count(pinnedId)) {
+                float weight = 1.0f;
+                if (const auto it = weightOverrides.find(pinnedId); it != weightOverrides.end()) weight = it->second;
+                result.push_back({rfl::Hex<uint32_t>(pinnedId), weight});
+            }
+        }
+        return result;
     }
     else {
-        activePropPaletteIndex_ = std::min(activePropPaletteIndex_, propPalettes_.size() - 1);
+        if (de.storedIndex < 0 || static_cast<size_t>(de.storedIndex) >= familyEntries_.size()) return {};
+        std::vector<PaletteEntry> result;
+        for (const auto& cfg : familyEntries_[de.storedIndex].propConfigs) {
+            if (!cfg.excluded) result.push_back({cfg.propID, cfg.weight});
+        }
+        return result;
     }
-
-    SaveFavorites_();
-    return true;
 }
 
-bool SC4AdvancedLotPlopDirector::RenamePropPalette(const size_t paletteIndex, const std::string& newName) {
-    if (paletteIndex >= propPalettes_.size() || newName.empty()) {
-        return false;
+FamilyEntry& SC4AdvancedLotPlopDirector::GetOrCreateStoredEntry_(const size_t displayIndex) {
+    auto& de = familyDisplayList_[displayIndex];
+    if (de.storedIndex >= 0 && static_cast<size_t>(de.storedIndex) < familyEntries_.size()) {
+        return familyEntries_[de.storedIndex];
+    }
+    FamilyEntry entry;
+    entry.name = de.name;
+    entry.starred = de.starred;
+    if (de.familyId.has_value()) entry.familyId = rfl::Hex<uint32_t>(*de.familyId);
+    familyEntries_.push_back(std::move(entry));
+    de.storedIndex = static_cast<int>(familyEntries_.size() - 1);
+    return familyEntries_.back();
+}
+
+void SC4AdvancedLotPlopDirector::BuildFamilyDisplayList_() {
+    std::optional<uint32_t> activeFamId;
+    int activeStoredIdx = -1;
+    if (activeFamilyDisplayIndex_ < familyDisplayList_.size()) {
+        activeFamId = familyDisplayList_[activeFamilyDisplayIndex_].familyId;
+        activeStoredIdx = familyDisplayList_[activeFamilyDisplayIndex_].storedIndex;
     }
 
-    for (size_t i = 0; i < propPalettes_.size(); ++i) {
-        if (i != paletteIndex && propPalettes_[i].name == newName) {
-            return false;
+    familyDisplayList_.clear();
+
+    std::unordered_map<uint32_t, int> storedByFamilyId;
+    for (int i = 0; i < static_cast<int>(familyEntries_.size()); ++i) {
+        if (familyEntries_[i].familyId.has_value()) {
+            storedByFamilyId.emplace(familyEntries_[i].familyId->value(), i);
         }
     }
 
-    propPalettes_[paletteIndex].name = newName;
-    SaveFavorites_();
-    return true;
-}
-
-bool SC4AdvancedLotPlopDirector::AddPropToPalette(const uint32_t propID, const size_t paletteIndex) {
-    if (paletteIndex >= propPalettes_.size() || propID == 0) {
-        return false;
+    for (const auto& family : propFamilies_) {
+        const uint32_t famId = family.familyId.value();
+        FamilyDisplayEntry de;
+        de.familyId = famId;
+        auto it = storedByFamilyId.find(famId);
+        if (it != storedByFamilyId.end()) {
+            const auto& stored = familyEntries_[it->second];
+            de.name = stored.name.empty() ? family.displayName : stored.name;
+            de.starred = stored.starred;
+            de.storedIndex = it->second;
+        }
+        else {
+            if (!family.displayName.empty()) {
+                de.name = family.displayName;
+            }
+            else {
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), "0x%08X", famId);
+                de.name = buf;
+            }
+            de.starred = false;
+            de.storedIndex = -1;
+        }
+        familyDisplayList_.push_back(std::move(de));
     }
 
-    if (!FindPropByInstanceId_(propID)) {
-        spdlog::warn("Cannot add prop 0x{:08X} to palette: prop not found", propID);
-        return false;
-    }
-
-    auto& palette = propPalettes_[paletteIndex];
-    for (const auto& entry : palette.entries) {
-        if (entry.propID.value() == propID) {
-            return false;
+    for (int i = 0; i < static_cast<int>(familyEntries_.size()); ++i) {
+        if (!familyEntries_[i].familyId.has_value()) {
+            FamilyDisplayEntry de;
+            de.name = familyEntries_[i].name;
+            de.starred = familyEntries_[i].starred;
+            de.storedIndex = i;
+            familyDisplayList_.push_back(std::move(de));
         }
     }
 
-    palette.entries.push_back(PaletteEntry{
-        rfl::Hex<uint32_t>(propID),
-        1.0f
-    });
-    activePropPaletteIndex_ = paletteIndex;
+    std::stable_sort(familyDisplayList_.begin(), familyDisplayList_.end(),
+        [](const FamilyDisplayEntry& a, const FamilyDisplayEntry& b) {
+            if (a.starred != b.starred) return a.starred > b.starred;
+            return a.name < b.name;
+        });
+
+    activeFamilyDisplayIndex_ = 0;
+    for (size_t i = 0; i < familyDisplayList_.size(); ++i) {
+        const auto& de = familyDisplayList_[i];
+        if (activeFamId.has_value() && de.familyId == activeFamId) {
+            activeFamilyDisplayIndex_ = i;
+            break;
+        }
+        if (!activeFamId.has_value() && de.storedIndex == activeStoredIdx && activeStoredIdx >= 0) {
+            activeFamilyDisplayIndex_ = i;
+            break;
+        }
+    }
+}
+
+void SC4AdvancedLotPlopDirector::SetFamilyStarred(const size_t displayIndex, const bool starred) {
+    if (displayIndex >= familyDisplayList_.size()) return;
+    auto& entry = GetOrCreateStoredEntry_(displayIndex);
+    entry.starred = starred;
+    familyDisplayList_[displayIndex].starred = starred;
+    BuildFamilyDisplayList_();
+    SaveFavorites_();
+}
+
+void SC4AdvancedLotPlopDirector::SetFamilyPropWeight(const size_t displayIndex, const uint32_t propID, const float weight) {
+    if (displayIndex >= familyDisplayList_.size()) return;
+    auto& entry = GetOrCreateStoredEntry_(displayIndex);
+    for (auto& cfg : entry.propConfigs) {
+        if (cfg.propID.value() == propID) {
+            cfg.weight = std::max(0.1f, weight);
+            SaveFavorites_();
+            return;
+        }
+    }
+    FamilyPropConfig cfg;
+    cfg.propID = rfl::Hex<uint32_t>(propID);
+    cfg.weight = std::max(0.1f, weight);
+    entry.propConfigs.push_back(std::move(cfg));
+    SaveFavorites_();
+}
+
+void SC4AdvancedLotPlopDirector::SetFamilyPropExcluded(const size_t displayIndex, const uint32_t propID, const bool excluded) {
+    if (displayIndex >= familyDisplayList_.size()) return;
+    auto& entry = GetOrCreateStoredEntry_(displayIndex);
+    for (auto& cfg : entry.propConfigs) {
+        if (cfg.propID.value() == propID) {
+            cfg.excluded = excluded;
+            SaveFavorites_();
+            return;
+        }
+    }
+    FamilyPropConfig cfg;
+    cfg.propID = rfl::Hex<uint32_t>(propID);
+    cfg.excluded = excluded;
+    entry.propConfigs.push_back(std::move(cfg));
+    SaveFavorites_();
+}
+
+bool SC4AdvancedLotPlopDirector::CreateManualPalette(const std::string& name) {
+    if (name.empty()) return false;
+    for (const auto& entry : familyEntries_) {
+        if (!entry.familyId.has_value() && entry.name == name) return false;
+    }
+    FamilyEntry entry;
+    entry.name = name;
+    familyEntries_.push_back(std::move(entry));
+    BuildFamilyDisplayList_();
+    for (size_t i = 0; i < familyDisplayList_.size(); ++i) {
+        if (!familyDisplayList_[i].familyId.has_value() &&
+            familyDisplayList_[i].storedIndex == static_cast<int>(familyEntries_.size() - 1)) {
+            activeFamilyDisplayIndex_ = i;
+            break;
+        }
+    }
     SaveFavorites_();
     return true;
 }
 
-void SC4AdvancedLotPlopDirector::AddPropToNewPalette(const uint32_t propID, const std::string& baseName) {
+bool SC4AdvancedLotPlopDirector::DeleteFamilyEntry(const size_t displayIndex) {
+    if (displayIndex >= familyDisplayList_.size()) return false;
+    const int storedIdx = familyDisplayList_[displayIndex].storedIndex;
+    if (storedIdx < 0 || static_cast<size_t>(storedIdx) >= familyEntries_.size()) return false;
+    familyEntries_.erase(familyEntries_.begin() + storedIdx);
+    BuildFamilyDisplayList_();
+    if (!familyDisplayList_.empty()) {
+        activeFamilyDisplayIndex_ = std::min(activeFamilyDisplayIndex_, familyDisplayList_.size() - 1);
+    }
+    SaveFavorites_();
+    return true;
+}
+
+bool SC4AdvancedLotPlopDirector::RenameFamilyEntry(const size_t displayIndex, const std::string& newName) {
+    if (displayIndex >= familyDisplayList_.size() || newName.empty()) return false;
+    auto& entry = GetOrCreateStoredEntry_(displayIndex);
+    entry.name = newName;
+    familyDisplayList_[displayIndex].name = newName;
+    SaveFavorites_();
+    return true;
+}
+
+std::vector<std::pair<size_t, std::string>> SC4AdvancedLotPlopDirector::GetManualPaletteList() const {
+    std::vector<std::pair<size_t, std::string>> result;
+    for (size_t i = 0; i < familyEntries_.size(); ++i) {
+        if (!familyEntries_[i].familyId.has_value()) {
+            result.emplace_back(i, familyEntries_[i].name);
+        }
+    }
+    return result;
+}
+
+bool SC4AdvancedLotPlopDirector::AddPropToManualPalette(const uint32_t propID, const size_t familyEntryIndex) {
+    if (familyEntryIndex >= familyEntries_.size() || propID == 0) return false;
+    auto& entry = familyEntries_[familyEntryIndex];
+    if (entry.familyId.has_value()) return false;
+    if (!FindPropByInstanceId_(propID)) return false;
+    for (const auto& cfg : entry.propConfigs) {
+        if (cfg.propID.value() == propID) return false;
+    }
+    FamilyPropConfig cfg;
+    cfg.propID = rfl::Hex<uint32_t>(propID);
+    entry.propConfigs.push_back(std::move(cfg));
+    SaveFavorites_();
+    return true;
+}
+
+void SC4AdvancedLotPlopDirector::AddPropToNewManualPalette(const uint32_t propID, const std::string& baseName) {
     const std::string defaultName = BuildDefaultPaletteName_(baseName);
     std::string candidateName = defaultName;
     int suffix = 2;
-
-    while (std::any_of(propPalettes_.begin(), propPalettes_.end(), [&](const PropPalette& palette) {
-        return palette.name == candidateName;
-    })) {
+    auto nameExists = [this](const std::string& name) {
+        return std::any_of(familyEntries_.begin(), familyEntries_.end(), [&](const FamilyEntry& e) {
+            return !e.familyId.has_value() && e.name == name;
+        });
+    };
+    while (nameExists(candidateName)) {
         candidateName = defaultName + " (" + std::to_string(suffix++) + ")";
     }
-
-    if (!CreatePropPalette(candidateName)) {
-        return;
+    if (!CreateManualPalette(candidateName)) return;
+    const int newStoredIdx = familyDisplayList_[activeFamilyDisplayIndex_].storedIndex;
+    if (newStoredIdx >= 0) {
+        AddPropToManualPalette(propID, static_cast<size_t>(newStoredIdx));
     }
-    AddPropToPalette(propID, activePropPaletteIndex_);
-}
-
-bool SC4AdvancedLotPlopDirector::AddPropFamilyToNewPalette(const uint32_t familyID) {
-    if (familyID == 0) {
-        return false;
-    }
-
-    std::unordered_set<uint32_t> uniquePropIds;
-    for (const auto& prop : props_) {
-        if (std::any_of(prop.familyIds.begin(), prop.familyIds.end(), [familyID](const rfl::Hex<uint32_t>& id) {
-            return id.value() == familyID;
-        })) {
-            uniquePropIds.insert(prop.instanceId.value());
-        }
-    }
-
-    if (uniquePropIds.empty()) {
-        return false;
-    }
-
-    std::string baseName;
-    if (const auto it = propFamilyNames_.find(familyID); it != propFamilyNames_.end() && !it->second.empty()) {
-        baseName = it->second;
-    }
-    else {
-        char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "Family 0x%08X", familyID);
-        baseName = buffer;
-    }
-
-    std::string candidateName = BuildDefaultPaletteName_(baseName);
-    int suffix = 2;
-    while (std::any_of(propPalettes_.begin(), propPalettes_.end(), [&](const PropPalette& palette) {
-        return palette.name == candidateName;
-    })) {
-        candidateName = BuildDefaultPaletteName_(baseName) + " (" + std::to_string(suffix++) + ")";
-    }
-
-    PropPalette palette;
-    palette.name = std::move(candidateName);
-    palette.entries.reserve(uniquePropIds.size());
-    for (const auto propId : uniquePropIds) {
-        palette.entries.push_back(PaletteEntry{
-            rfl::Hex<uint32_t>(propId),
-            1.0f
-        });
-    }
-
-    propPalettes_.push_back(std::move(palette));
-    activePropPaletteIndex_ = propPalettes_.size() - 1;
-    SaveFavorites_();
-    return true;
 }
 
 void SC4AdvancedLotPlopDirector::SaveFavoritesNow() const {
@@ -735,6 +854,7 @@ void SC4AdvancedLotPlopDirector::LoadProps_() {
 
         props_.clear();
         propsById_.clear();
+        propFamilies_.clear();
         propFamilyNames_.clear();
 
         auto rebuildPropIndexes = [this]() {
@@ -746,8 +866,9 @@ void SC4AdvancedLotPlopDirector::LoadProps_() {
 
         if (auto result = rfl::cbor::load<PropsCache>(cborPath.string())) {
             props_ = std::move(result->props);
+            propFamilies_ = std::move(result->propFamilies);
             propFamilyNames_.clear();
-            for (const auto& family : result->propFamilies) {
+            for (const auto& family : propFamilies_) {
                 if (!family.displayName.empty()) {
                     propFamilyNames_.emplace(family.familyId.value(), family.displayName);
                 }
@@ -761,6 +882,7 @@ void SC4AdvancedLotPlopDirector::LoadProps_() {
 
         if (auto legacyResult = rfl::cbor::load<std::vector<Prop>>(cborPath.string())) {
             props_ = std::move(*legacyResult);
+            propFamilies_.clear();
             propFamilyNames_.clear();
             rebuildPropIndexes();
 
@@ -785,8 +907,9 @@ void SC4AdvancedLotPlopDirector::LoadFavorites_() {
             spdlog::info("Favorites file not found, starting with empty favorites");
             favoriteLotIds_.clear();
             favoritePropIds_.clear();
-            propPalettes_.clear();
-            activePropPaletteIndex_ = 0;
+            familyEntries_.clear();
+            activeFamilyDisplayIndex_ = 0;
+            BuildFamilyDisplayList_();
             return;
         }
 
@@ -803,22 +926,26 @@ void SC4AdvancedLotPlopDirector::LoadFavorites_() {
                 }
             }
 
-            propPalettes_.clear();
-            if (result->palettes) {
-                propPalettes_ = *result->palettes;
-
-                for (auto& palette : propPalettes_) {
-                    palette.densityVariation = std::clamp(palette.densityVariation, 0.0f, 1.0f);
-                    std::erase_if(palette.entries, [this](const PaletteEntry& entry) {
-                        return FindPropByInstanceId_(entry.propID.value()) == nullptr;
-                    });
-                    for (auto& entry : palette.entries) {
-                        entry.weight = std::max(0.1f, entry.weight);
+            familyEntries_.clear();
+            if (result->families) {
+                familyEntries_ = *result->families;
+                for (auto& entry : familyEntries_) {
+                    entry.densityVariation = std::clamp(entry.densityVariation, 0.0f, 1.0f);
+                    if (!entry.familyId.has_value()) {
+                        // Manual palette: remove stale prop references
+                        std::erase_if(entry.propConfigs, [this](const FamilyPropConfig& cfg) {
+                            return FindPropByInstanceId_(cfg.propID.value()) == nullptr;
+                        });
+                    }
+                    for (auto& cfg : entry.propConfigs) {
+                        if (!cfg.excluded) cfg.weight = std::max(0.1f, cfg.weight);
                     }
                 }
             }
-            activePropPaletteIndex_ = 0;
-            spdlog::info("Loaded {} favorite lots from {}", favoriteLotIds_.size(), cborPath.string());
+            activeFamilyDisplayIndex_ = 0;
+            BuildFamilyDisplayList_();
+            spdlog::info("Loaded {} favorite lots, {} family entries from {}",
+                         favoriteLotIds_.size(), familyEntries_.size(), cborPath.string());
         }
         else {
             spdlog::warn("Failed to load favorites from CBOR file: {}", result.error().what());
@@ -836,7 +963,7 @@ void SC4AdvancedLotPlopDirector::SaveFavorites_() const {
 
         // Build the AllFavorites structure
         AllFavorites allFavorites;
-        allFavorites.version = 2;
+        allFavorites.version = 3;
 
         // Convert favorites set to vector of Hex<uint32_t>
         for (uint32_t id : favoriteLotIds_) {
@@ -862,11 +989,11 @@ void SC4AdvancedLotPlopDirector::SaveFavorites_() const {
             allFavorites.props = std::nullopt;
         }
         allFavorites.flora = std::nullopt;
-        if (propPalettes_.empty()) {
-            allFavorites.palettes = std::nullopt;
+        if (familyEntries_.empty()) {
+            allFavorites.families = std::nullopt;
         }
         else {
-            allFavorites.palettes = propPalettes_;
+            allFavorites.families = familyEntries_;
         }
 
         // Save to CBOR file

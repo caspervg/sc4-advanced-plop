@@ -82,14 +82,31 @@ struct PropsCache {
     std::vector<PropFamilyInfo> propFamilies;
 };
 
+// Used internally at runtime to represent a resolved prop for painting.
 struct PaletteEntry {
     rfl::Hex<uint32_t> propID;
     float weight = 1.0f;
 };
 
-struct PropPalette {
+// Per-prop configuration stored inside a FamilyEntry.
+// For game-family entries: overrides (excluded, weight, pinned).
+// For manual palette entries: defines the full prop list (pinned unused).
+struct FamilyPropConfig {
+    rfl::Hex<uint32_t> propID;
+    float weight = 1.0f;
+    bool excluded = false;  // game-family: exclude this prop from painting
+    bool pinned = false;    // game-family: force-include even if not in the family
+};
+
+// A Families-tab entry. Covers both live game families and user-created manual palettes.
+struct FamilyEntry {
     std::string name;
-    std::vector<PaletteEntry> entries;
+    bool starred = false;
+    // Set for game-family entries; absent for manual palettes.
+    std::optional<rfl::Hex<uint32_t>> familyId;
+    // Game-family: per-prop overrides (weight, exclude, pin).
+    // Manual palette: the full prop list.
+    std::vector<FamilyPropConfig> propConfigs;
     float densityVariation = 0.0f;
 };
 
@@ -98,10 +115,12 @@ struct TabFavorites {
 };
 
 struct AllFavorites {
-    uint32_t version = 2;
+    uint32_t version = 3;
     TabFavorites lots;
     std::optional<TabFavorites> props;  // Future: prop favorites
     std::optional<TabFavorites> flora;  // Future: flora favorites
-    std::optional<std::vector<PropPalette>> palettes;
+    // Game-family entries with overrides + user-created manual palettes.
+    // Unmodified game families are not stored; they are derived from the props cache.
+    std::optional<std::vector<FamilyEntry>> families;
     rfl::Timestamp<"%Y-%m-%dT%H:%M:%S"> lastModified;
 };
