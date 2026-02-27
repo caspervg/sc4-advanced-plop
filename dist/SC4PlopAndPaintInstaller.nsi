@@ -11,11 +11,12 @@
 !define APP_TOOLS_SUBDIR "SC4PlopAndPaint"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SC4PlopAndPaint"
 !define APP_REG_KEY "Software\SC4PlopAndPaint"
+!define SERVICE_REG_KEY "Software\SC4CustomServices"
 
 Name "${APP_NAME} ${APP_VERSION}"
 OutFile "SC4PlopAndPaint-${APP_VERSION}-Setup.exe"
 Unicode True
-RequestExecutionLevel admin
+RequestExecutionLevel user
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -145,7 +146,39 @@ Function ConfigurePathsPageLeave
     Abort
   ${EndIf}
 
+  Call CheckSC4Version
+  Call CheckServiceInstalled
   Call CheckLargeAddressAware
+FunctionEnd
+
+Function CheckSC4Version
+  ; Skip silently if the exe isn't present — the Apps folder check above already warned.
+  ${IfNot} ${FileExists} "$GameRoot\Apps\SimCity 4.exe"
+    Return
+  ${EndIf}
+
+  GetDLLVersion "$GameRoot\Apps\SimCity 4.exe" $R0 $R1
+  ${If} ${Errors}
+    Return ; Can't read version resource, skip
+  ${EndIf}
+
+  ; FileVersion is Major.Minor.Build.Revision; SC4 641 has Build = 641 in dwFileVersionLS >> 16.
+  IntOp $0 $R1 >> 16
+  ${If} $0 != 641
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "${APP_NAME} requires SimCity 4 version 641 (the latest digital release).$\r$\nDetected version: $0.$\r$\nPlease update your game before installing."
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function CheckServiceInstalled
+  ClearErrors
+  ReadRegDWORD $0 HKLM "${SERVICE_REG_KEY}" "Version"
+  ${If} ${Errors}
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "SC4 Custom Services is not installed.$\r$\nPlease run the SC4CustomServices installer first, then re-run this installer."
+    Abort
+  ${EndIf}
 FunctionEnd
 
 Function CheckLargeAddressAware
@@ -305,13 +338,8 @@ FunctionEnd
 Section "Install"
   SetShellVarContext current
 
-  CreateDirectory "$GameRoot\Apps"
-  SetOutPath "$GameRoot\Apps"
-  File "PLACE_IN_YOUR_SC4_APPS_FOLDER\imgui.dll"
-
   CreateDirectory "$SC4PluginsDir"
   SetOutPath "$SC4PluginsDir"
-  File "PLACE_IN_YOUR_PLUGINS_FOLDER\SC4CustomServices.dll"
   File "PLACE_IN_YOUR_PLUGINS_FOLDER\SC4PlopAndPaint.dll"
   File "PLACE_IN_YOUR_PLUGINS_FOLDER\SC4PlopAndPaint.dat"
 
@@ -416,9 +444,6 @@ FunctionEnd
 Section "Uninstall"
   SetShellVarContext current
 
-  Delete "$GameRoot\Apps\imgui.dll"
-
-  Delete "$SC4PluginsDir\SC4CustomServices.dll"
   Delete "$SC4PluginsDir\SC4PlopAndPaint.dll"
   Delete "$SC4PluginsDir\SC4PlopAndPaint.dat"
 
