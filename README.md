@@ -96,3 +96,28 @@ vendor/
 - **Shared entities** (`src/shared/entities.hpp`) are plain structs annotated with `rfl::Hex<T>` and `rfl::TaggedUnion` for automatic CBOR serialization via reflect-cpp.
 - **Cache builder scanning** is two-pass: buildings are parsed first, then lot configs are resolved against the building map (including family-based growable lot references). Output is written as CBOR binary files.
 - **DLL** loads the CBOR files on city init (`PostCityInit`), then renders the ImGui panel each frame. Prop painting uses a custom GZCOM input control and a draw service overlay for on-map feedback.
+
+## Third-party code
+
+| Library | Purpose | License |
+|---|---|---|
+| [sc4-render-services](https://github.com/caspervg/sc4-render-services) | ImGui backend and SC4 custom services integration | LGPL 2.1 |
+| [gzcom-dll](https://github.com/nsgomez/gzcom-dll) | GZCOM interface headers for SC4 plugin development | LGPL 2.1 |
+| [DBPFKit](https://github.com/caspervg/DBPFKit) | DBPF archive reader (exemplars, FSH, S3D, LText) | — |
+| [Dear ImGui](https://github.com/ocornut/imgui) | Immediate-mode UI framework | MIT |
+| [reflect-cpp](https://github.com/getml/reflect-cpp) | Compile-time reflection and CBOR/JSON serialization | MIT |
+| [spdlog](https://github.com/gabime/spdlog) | Structured logging | MIT |
+| [args](https://github.com/Taywee/args) | CLI argument parsing | MIT |
+| [pugixml](https://github.com/zeux/pugixml) | XML parsing (PropertyMapper) | MIT |
+| [yyjson](https://github.com/ibireme/yyjson) | Fast JSON parsing (reflect-cpp backend) | MIT |
+| [stb](https://github.com/nothings/stb) | Image decoding/encoding | MIT / Public Domain |
+| [WIL](https://github.com/microsoft/wil) | Windows Implementation Library helpers | MIT |
+| [libsquish](https://sourceforge.net/projects/libsquish/) | DXT texture decompression | MIT |
+| [mio](https://github.com/mandreyel/mio) | Memory-mapped file I/O | MIT |
+| [jsoncons](https://github.com/danielaparker/jsoncons) | JSON/CBOR processing | Boost 1.0 |
+| [utfcpp](https://github.com/nemtrif/utfcpp) | UTF-8 string utilities | Boost 1.0 |
+| [ctre](https://github.com/hanickadot/compile-time-regular-expressions) | Compile-time regular expressions | Apache 2.0 |
+| [raylib](https://www.raylib.com) | 3D rendering for thumbnail generation | zlib |
+| [GLFW](https://www.glfw.org) | OpenGL windowing (raylib dependency) | zlib |
+
+Full license texts are in [dist/ThirdPartyNotices.txt](dist/ThirdPartyNotices.txt).
