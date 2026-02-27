@@ -1,7 +1,9 @@
 #include "PropPanelTab.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include "Constants.hpp"
+#include "Utils.hpp"
 #include "rfl/visit.hpp"
 #include "spdlog/spdlog.h"
 
@@ -15,10 +17,6 @@ void PropPanelTab::OnRender() {
     if (props.empty()) {
         ImGui::TextUnformatted("No props loaded. Please ensure props.cbor exists in the Plugins directory.");
         return;
-    }
-
-    if (iconCache_.empty()) {
-        iconCache_.reserve(props.size());
     }
 
     RenderFilterUI_();
@@ -53,19 +51,28 @@ void PropPanelTab::OnRender() {
 
 void PropPanelTab::OnDeviceReset(const uint32_t deviceGeneration) {
     if (deviceGeneration != lastDeviceGeneration_) {
-        iconCache_.clear();
-        texturesLoaded_ = false;
+        thumbnailCache_.OnDeviceReset();
         lastDeviceGeneration_ = deviceGeneration;
     }
 }
 
-void PropPanelTab::LoadIconTexture_(const uint64_t propKey, const Prop& prop) {
-    if (!imguiService_ || !prop.thumbnail.has_value()) {
-        return;
+ImGuiTexture PropPanelTab::LoadPropTexture_(uint64_t propKey) {
+    ImGuiTexture texture;
+
+    if (!imguiService_) {
+        spdlog::warn("Could not load prop thumbnail: imguiService_ is null");
+        return texture;
     }
 
-    if (iconCache_.contains(propKey)) {
-        return;
+    const auto& propsById = director_->GetPropsById();
+    if (!propsById.contains(propKey)) {
+        spdlog::warn("Could not find prop with key 0x{:016X} in props map", propKey);
+        return texture;
+    }
+    const auto& prop = propsById.at(propKey);
+    if (!prop.thumbnail.has_value()) {
+        spdlog::warn("Prop with key 0x{:016X} has no thumbnail", propKey);
+        return texture;
     }
 
     const auto& thumbnail = prop.thumbnail.value();
@@ -81,20 +88,15 @@ void PropPanelTab::LoadIconTexture_(const uint64_t propKey, const Prop& prop) {
 
         const size_t expectedSize = static_cast<size_t>(width) * height * 4;
         if (data.size() != expectedSize) {
-            spdlog::warn("Prop icon data size mismatch for 0x{:08X}/0x{:08X}: expected {}, got {}",
-                         prop.groupId.value(), prop.instanceId.value(), expectedSize, data.size());
+            spdlog::warn("Prop icon data size mismatch for key 0x{:016X}: expected {}, got {}",
+                         propKey, expectedSize, data.size());
             return;
         }
 
-        ImGuiTexture texture;
-        if (texture.Create(imguiService_, width, height, data.data())) {
-            iconCache_.emplace(propKey, std::move(texture));
-        }
-        else {
-            spdlog::warn("Failed to create prop texture for 0x{:08X}/0x{:08X}",
-                         prop.groupId.value(), prop.instanceId.value());
-        }
+        texture.Create(imguiService_, width, height, data.data());
     }, thumbnail);
+
+    return texture;
 }
 
 void PropPanelTab::RenderFilterUI_() {
@@ -154,11 +156,14 @@ void PropPanelTab::RenderTable_() {
 
 void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredProps,
                                         const std::unordered_set<uint64_t>& favorites) {
-    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
-        ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
-        ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti;
+    (void)favorites;
 
-    if (ImGui::BeginTable("PropsTable", 4, tableFlags, ImVec2(0, 0))) {
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody |
+        ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti | ImGuiTableFlags_ScrollY;
+
+    if (ImGui::BeginTable("PropsTable", 5, tableFlags, ImVec2(0, 0))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Thumbnail",
                                 ImGuiTableColumnFlags_WidthFixed |
                                 ImGuiTableColumnFlags_NoSort,
@@ -175,7 +180,10 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                                 ImGuiTableColumnFlags_WidthFixed |
                                 ImGuiTableColumnFlags_NoSort,
                                 UI::kActionColumnWidth);
-
+        ImGui::TableSetupColumn("##palette",
+                                ImGuiTableColumnFlags_WidthFixed |
+                                ImGuiTableColumnFlags_NoSort,
+                                26.0f);
         ImGui::TableHeadersRow();
 
         if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs && specs->SpecsCount > 0) {
@@ -206,63 +214,160 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
             }
         }
 
-        if (!texturesLoaded_ && imguiService_) {
-            size_t loaded = 0;
-            for (const auto& view : filteredProps) {
-                if (loaded >= kMaxIconsToLoadPerFrame) break;
-                const auto& prop = *view.prop;
-                const uint64_t key = (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
-                if (prop.thumbnail.has_value() && !iconCache_.contains(key)) {
-                    LoadIconTexture_(key, prop);
-                    loaded++;
+        constexpr float rowHeight = UI::kIconSize;
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(filteredProps.size()), rowHeight);
+
+        while (clipper.Step()) {
+            // Request texture loads for visible and margin items
+            const int prefetchStart = std::max(0, clipper.DisplayStart - Cache::kPrefetchMargin);
+            const int prefetchEnd = std::min(static_cast<int>(filteredProps.size()), clipper.DisplayEnd + Cache::kPrefetchMargin);
+            for (int i = prefetchStart; i < prefetchEnd; ++i) {
+                const auto& prop = *filteredProps[i].prop;
+                if (prop.thumbnail.has_value()) {
+                    thumbnailCache_.Request(MakeGIKey(prop.groupId.value(), prop.instanceId.value()));
                 }
             }
-            if (loaded == 0) {
-                texturesLoaded_ = true;
-            }
-        }
 
-        for (size_t rowIdx = 0; rowIdx < filteredProps.size(); ++rowIdx) {
-            const auto& prop = *filteredProps[rowIdx].prop;
-            const uint64_t key = (static_cast<uint64_t>(prop.groupId.value()) << 32) | prop.instanceId.value();
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const auto& prop = *filteredProps[i].prop;
+                const uint64_t key = MakeGIKey(prop.groupId.value(), prop.instanceId.value());
 
-            ImGui::PushID(static_cast<int>(rowIdx));
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            if (iconCache_.contains(key)) {
-                ImGui::Image(iconCache_[key].GetID(), ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            else {
-                ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            ImGui::TableNextColumn();
-            if (prop.visibleName.empty()) {
-                ImGui::TextUnformatted(prop.exemplarName.c_str());
-            } else {
-                ImGui::TextUnformatted(prop.visibleName.c_str());
-                ImGui::TextDisabled("%s", prop.exemplarName.c_str());
-            }
+                ImGui::PushID(static_cast<int>(key));
+                ImGui::TableNextRow(0, rowHeight);
 
-            ImGui::TableNextColumn();
-            ImGui::Text("%.1f x %.1f x %.1f", prop.width, prop.height, prop.depth);
-            ImGui::TableNextColumn();
-            if (ImGui::Button("Paint")) {
-                if (director_->IsPropPainting() &&
-                    director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName)) {
-                    // Reuse current paint mode and rotation; no modal.
+                ImGui::TableNextColumn();
+                ImGui::Selectable("##row", false,
+                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap,
+                                  ImVec2(0, rowHeight));
+                ImGui::SameLine();
+                auto thumbTextureId = thumbnailCache_.Get(key);
+                if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
+                    ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
                 }
                 else {
-                    pendingPaint_.propId = prop.instanceId.value();
-                    pendingPaint_.propName = prop.visibleName;
-                    pendingPaint_.settings.mode = PropPaintMode::Direct;
-                    pendingPaint_.settings.rotation = 0;
-                    pendingPaint_.open = true;
+                    ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
                 }
+
+                // Name
+                ImGui::TableNextColumn();
+                if (prop.visibleName.empty()) {
+                    ImGui::TextUnformatted(prop.exemplarName.c_str());
+                }
+                else {
+                    ImGui::TextUnformatted(prop.visibleName.c_str());
+                    ImGui::TextDisabled("%s", prop.exemplarName.c_str());
+                }
+
+                if (!prop.familyIds.empty() && ImGui::IsItemHovered()) {
+                    const auto& familyNames = director_->GetPropFamilyNames();
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Families (%zu)", prop.familyIds.size());
+                    for (const auto& familyIdHex : prop.familyIds) {
+                        const uint32_t familyId = familyIdHex.value();
+                        const auto it = familyNames.find(familyId);
+                        if (it != familyNames.end()) {
+                            ImGui::Text("0x%08X  %s", familyId, it->second.c_str());
+                        }
+                        else {
+                            ImGui::Text("0x%08X", familyId);
+                        }
+                    }
+                    ImGui::EndTooltip();
+                }
+
+                // Size
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f x %.1f x %.1f", prop.width, prop.height, prop.depth);
+
+                // Actions
+                ImGui::TableNextColumn();
+                if (ImGui::Button("Paint")) {
+                    if (director_->IsPropPainting() &&
+                        director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName)) {
+                        // Reuse current paint mode and rotation; no modal.
+                        }
+                    else {
+                        pendingPaint_.propId = prop.instanceId.value();
+                        pendingPaint_.propName = prop.visibleName;
+                        pendingPaint_.settings.mode = PropPaintMode::Direct;
+                        pendingPaint_.settings.rotation = 0;
+                        pendingPaint_.open = true;
+                    }
+                }
+                ImGui::SameLine();
+                RenderFavButton_(prop);
+
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("+")) {
+                    ImGui::OpenPopup("AddToPalette");
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Add to palette");
+                }
+
+                if (ImGui::BeginPopup("AddToPalette")) {
+                    const auto& palettes = director_->GetPropPalettes();
+                    if (palettes.empty()) {
+                        ImGui::TextDisabled("No palettes yet.");
+                        if (ImGui::Selectable("+ New palette...")) {
+                            const std::string& baseName = prop.visibleName.empty() ? prop.exemplarName : prop.visibleName;
+                            director_->AddPropToNewPalette(prop.instanceId.value(), baseName);
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    else {
+                        for (size_t paletteIndex = 0; paletteIndex < palettes.size(); ++paletteIndex) {
+                            if (ImGui::Selectable(palettes[paletteIndex].name.c_str())) {
+                                director_->AddPropToPalette(prop.instanceId.value(), paletteIndex);
+                                ImGui::CloseCurrentPopup();
+                                break;
+                            }
+                        }
+                        ImGui::Separator();
+                        if (ImGui::Selectable("+ New palette...")) {
+                            const std::string& baseName = prop.visibleName.empty() ? prop.exemplarName : prop.visibleName;
+                            director_->AddPropToNewPalette(prop.instanceId.value(), baseName);
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+
+                    if (!prop.familyIds.empty()) {
+                        ImGui::Separator();
+                        if (ImGui::BeginMenu("Create palette from family")) {
+                            const auto& familyNames = director_->GetPropFamilyNames();
+                            for (const auto& familyIdHex : prop.familyIds) {
+                                const uint32_t familyId = familyIdHex.value();
+                                std::string label;
+                                if (const auto it = familyNames.find(familyId); it != familyNames.end()) {
+                                    label = it->second + "##fam" + std::to_string(familyId);
+                                }
+                                else {
+                                    char familyHex[16];
+                                    std::snprintf(familyHex, sizeof(familyHex), "0x%08X", familyId);
+                                    label = std::string(familyHex) + "##fam" + std::to_string(familyId);
+                                }
+
+                                if (ImGui::MenuItem(label.c_str())) {
+                                    director_->AddPropFamilyToNewPalette(familyId);
+                                    ImGui::CloseCurrentPopup();
+                                    break;
+                                }
+                            }
+                            ImGui::EndMenu();
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
+
+                ImGui::PopID();
             }
-            ImGui::SameLine();
-            RenderFavButton_(prop);
-            ImGui::PopID();
         }
+
+        thumbnailCache_.ProcessLoadQueue([this](const uint64_t key) {
+            return LoadPropTexture_(key);
+        });
+
         ImGui::EndTable();
     }
 }
@@ -290,34 +395,40 @@ void PropPanelTab::RenderRotationModal_() {
         ImGui::TextUnformatted("Mode");
         int mode = static_cast<int>(pendingPaint_.settings.mode);
         ImGui::RadioButton("Direct paint", &mode, static_cast<int>(PropPaintMode::Direct));
-#ifdef _DEBUG
         ImGui::RadioButton("Paint along line", &mode, static_cast<int>(PropPaintMode::Line));
         ImGui::RadioButton("Paint inside polygon", &mode, static_cast<int>(PropPaintMode::Polygon));
-#endif
         pendingPaint_.settings.mode = static_cast<PropPaintMode>(mode);
 
         ImGui::Separator();
         ImGui::TextUnformatted("Rotation");
         int rotation = pendingPaint_.settings.rotation;
-        ImGui::RadioButton("0 deg", &rotation, 0); ImGui::SameLine();
-        ImGui::RadioButton("90 deg", &rotation, 1); ImGui::SameLine();
-        ImGui::RadioButton("180 deg", &rotation, 2); ImGui::SameLine();
+        ImGui::RadioButton("0 deg", &rotation, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("90 deg", &rotation, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("180 deg", &rotation, 2);
+        ImGui::SameLine();
         ImGui::RadioButton("270 deg", &rotation, 3);
         pendingPaint_.settings.rotation = rotation;
 
         if (pendingPaint_.settings.mode == PropPaintMode::Line) {
             ImGui::Separator();
             ImGui::SliderFloat("Spacing (m)", &pendingPaint_.settings.spacingMeters, 0.5f, 50.0f, "%.1f");
+            ImGui::Checkbox("Align to path direction", &pendingPaint_.settings.alignToPath);
+            ImGui::SliderFloat("Lateral jitter (m)", &pendingPaint_.settings.randomOffset, 0.0f, 5.0f, "%.1f");
+            ImGui::TextWrapped("Click to add line points. Enter places props. Backspace removes the last point.");
         }
         else if (pendingPaint_.settings.mode == PropPaintMode::Polygon) {
             ImGui::Separator();
             ImGui::SliderFloat("Density (/100 m^2)", &pendingPaint_.settings.densityPer100Sqm, 0.1f, 20.0f, "%.1f");
+            ImGui::Checkbox("Random rotation", &pendingPaint_.settings.randomRotation);
+            ImGui::TextWrapped("Click to add polygon vertices. Enter fills with props. Backspace removes the last vertex.");
+        }
+        else {
+            ImGui::TextWrapped("Click to place props directly. Enter commits placed props.");
         }
 
-        const bool canStart = pendingPaint_.settings.mode == PropPaintMode::Direct;
-        if (!canStart) {
-            ImGui::TextDisabled("Line/polygon modes are not implemented yet.");
-        }
+        const bool canStart = true;
 
         if (ImGui::Button("Start") && canStart) {
             director_->StartPropPainting(pendingPaint_.propId, pendingPaint_.settings, pendingPaint_.propName);

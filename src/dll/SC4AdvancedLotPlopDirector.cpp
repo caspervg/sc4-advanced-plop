@@ -7,6 +7,9 @@
 #include <wil/win32_helpers.h>
 
 #include <chrono>
+#include <algorithm>
+#include <cstddef>
+#include <cstdio>
 #include "cGZPersistResourceKey.h"
 #include "cIGZCommandParameterSet.h"
 #include "cIGZPersistResourceManager.h"
@@ -15,6 +18,7 @@
 #include "cRZBaseVariant.h"
 #include "LotPlopPanel.hpp"
 #include "PropPainterInputControl.hpp"
+#include "Utils.hpp"
 #include "public/cIGZS3DCameraService.h"
 #include "public/S3DCameraServiceIds.h"
 #include "rfl/cbor/load.hpp"
@@ -36,6 +40,7 @@ namespace {
 
 SC4AdvancedLotPlopDirector::SC4AdvancedLotPlopDirector()
     : imguiService_(nullptr)
+      , drawService_(nullptr)
       , pView3D_(nullptr)
       , panelRegistered_(false) {
     spdlog::info("SC4AdvancedLotPlopDirector initialized");
@@ -80,6 +85,21 @@ bool SC4AdvancedLotPlopDirector::PostAppInit() {
             spdlog::warn("S3D camera service not available");
         }
 
+        if (mpFrameWork->GetSystemService(kDrawServiceID, GZIID_cIGZDrawService,
+                                          reinterpret_cast<void**>(&drawService_))) {
+            spdlog::info("Acquired draw service");
+            if (!drawService_->RegisterDrawPassCallback(
+                DrawServicePass::PreDynamic,
+                &DrawOverlayCallback_,
+                this,
+                &drawCallbackToken_)) {
+                spdlog::warn("Failed to register draw pass callback");
+            }
+        }
+        else {
+            spdlog::warn("Draw service not available");
+        }
+
         LoadLots_();
         LoadProps_();
         LoadFavorites_();
@@ -106,21 +126,39 @@ bool SC4AdvancedLotPlopDirector::PostAppInit() {
 bool SC4AdvancedLotPlopDirector::PreAppShutdown() { return true; }
 
 bool SC4AdvancedLotPlopDirector::PostAppShutdown() {
+    // Destroy objects that may call ImGuiService first.
+    if (propPainterControl_) {
+        StopPropPainting();
+        propPainterControl_->SetCity(nullptr);
+        propPainterControl_->Shutdown();
+        propPainterControl_.Reset();
+    }
+
     if (imguiService_ && panelRegistered_) {
         SetLotPlopPanelVisible(false);
         imguiService_->UnregisterPanel(kLotPlopPanelId);
-        panelRegistered_ = false;
-        panel_.reset();
+    }
+    panelRegistered_ = false;
+    if (panel_) {
+        panel_->Shutdown(); // Release textures while the ImGui service is still alive
+    }
+    panel_.reset();
+
+    if (drawService_ && drawCallbackToken_ != 0) {
+        drawService_->UnregisterDrawPassCallback(drawCallbackToken_);
+        drawCallbackToken_ = 0;
     }
 
     if (imguiService_) {
         imguiService_->Release();
         imguiService_ = nullptr;
     }
-    if (propPainterControl_) {
-        propPainterControl_->Shutdown();
-        propPainterControl_.Reset();
+
+    if (drawService_) {
+        drawService_->Release();
+        drawService_ = nullptr;
     }
+
     if (cameraService_) {
         cameraService_->Release();
         cameraService_ = nullptr;
@@ -153,8 +191,24 @@ const std::vector<Building>& SC4AdvancedLotPlopDirector::GetBuildings() const {
     return buildings_;
 }
 
+const std::unordered_map<uint64_t, Building>& SC4AdvancedLotPlopDirector::GetBuildingsById() const {
+    return buildingsById_;
+}
+
+const std::unordered_map<uint64_t, Lot>& SC4AdvancedLotPlopDirector::GetLotsById() const {
+    return lotsById_;
+}
+
 const std::vector<Prop>& SC4AdvancedLotPlopDirector::GetProps() const {
     return props_;
+}
+
+const std::unordered_map<uint64_t, Prop>& SC4AdvancedLotPlopDirector::GetPropsById() const {
+    return propsById_;
+}
+
+const std::unordered_map<uint32_t, std::string>& SC4AdvancedLotPlopDirector::GetPropFamilyNames() const {
+    return propFamilyNames_;
 }
 
 void SC4AdvancedLotPlopDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
@@ -221,7 +275,7 @@ void SC4AdvancedLotPlopDirector::ToggleFavorite(uint32_t lotInstanceId) {
 }
 
 bool SC4AdvancedLotPlopDirector::IsPropFavorite(const uint32_t groupId, const uint32_t instanceId) const {
-    return favoritePropIds_.contains(MakePropKey_(groupId, instanceId));
+    return favoritePropIds_.contains(MakeGIKey(groupId, instanceId));
 }
 
 const std::unordered_set<uint64_t>& SC4AdvancedLotPlopDirector::GetFavoritePropIds() const {
@@ -229,7 +283,7 @@ const std::unordered_set<uint64_t>& SC4AdvancedLotPlopDirector::GetFavoritePropI
 }
 
 void SC4AdvancedLotPlopDirector::TogglePropFavorite(const uint32_t groupId, const uint32_t instanceId) {
-    const uint64_t key = MakePropKey_(groupId, instanceId);
+    const uint64_t key = MakeGIKey(groupId, instanceId);
     if (favoritePropIds_.contains(key)) {
         favoritePropIds_.erase(key);
         spdlog::info("Removed prop favorite: 0x{:08X}/0x{:08X}", groupId, instanceId);
@@ -241,13 +295,184 @@ void SC4AdvancedLotPlopDirector::TogglePropFavorite(const uint32_t groupId, cons
     SaveFavorites_();
 }
 
-void SC4AdvancedLotPlopDirector::SetLotPlopPanelVisible(bool visible) {
-    if (!imguiService_ || !panelRegistered_ || !panel_) {
+const std::vector<PropPalette>& SC4AdvancedLotPlopDirector::GetPropPalettes() const {
+    return propPalettes_;
+}
+
+std::vector<PropPalette>& SC4AdvancedLotPlopDirector::GetPropPalettes() {
+    return propPalettes_;
+}
+
+size_t SC4AdvancedLotPlopDirector::GetActivePropPaletteIndex() const {
+    return activePropPaletteIndex_;
+}
+
+void SC4AdvancedLotPlopDirector::SetActivePropPaletteIndex(const size_t index) {
+    if (propPalettes_.empty()) {
+        activePropPaletteIndex_ = 0;
         return;
     }
 
-    panelVisible_ = visible;
-    panel_->SetOpen(visible);
+    activePropPaletteIndex_ = std::min(index, propPalettes_.size() - 1);
+}
+
+const PropPalette* SC4AdvancedLotPlopDirector::GetActivePropPalette() const {
+    if (propPalettes_.empty() || activePropPaletteIndex_ >= propPalettes_.size()) {
+        return nullptr;
+    }
+
+    return &propPalettes_[activePropPaletteIndex_];
+}
+
+bool SC4AdvancedLotPlopDirector::CreatePropPalette(const std::string& name) {
+    if (name.empty()) {
+        return false;
+    }
+
+    for (const auto& palette : propPalettes_) {
+        if (palette.name == name) {
+            return false;
+        }
+    }
+
+    PropPalette palette;
+    palette.name = name;
+    propPalettes_.push_back(std::move(palette));
+    activePropPaletteIndex_ = propPalettes_.size() - 1;
+    SaveFavorites_();
+    return true;
+}
+
+bool SC4AdvancedLotPlopDirector::DeletePropPalette(const size_t paletteIndex) {
+    if (paletteIndex >= propPalettes_.size()) {
+        return false;
+    }
+
+    propPalettes_.erase(propPalettes_.begin() + static_cast<std::ptrdiff_t>(paletteIndex));
+    if (propPalettes_.empty()) {
+        activePropPaletteIndex_ = 0;
+    }
+    else {
+        activePropPaletteIndex_ = std::min(activePropPaletteIndex_, propPalettes_.size() - 1);
+    }
+
+    SaveFavorites_();
+    return true;
+}
+
+bool SC4AdvancedLotPlopDirector::RenamePropPalette(const size_t paletteIndex, const std::string& newName) {
+    if (paletteIndex >= propPalettes_.size() || newName.empty()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < propPalettes_.size(); ++i) {
+        if (i != paletteIndex && propPalettes_[i].name == newName) {
+            return false;
+        }
+    }
+
+    propPalettes_[paletteIndex].name = newName;
+    SaveFavorites_();
+    return true;
+}
+
+bool SC4AdvancedLotPlopDirector::AddPropToPalette(const uint32_t propID, const size_t paletteIndex) {
+    if (paletteIndex >= propPalettes_.size() || propID == 0) {
+        return false;
+    }
+
+    if (!FindPropByInstanceId_(propID)) {
+        spdlog::warn("Cannot add prop 0x{:08X} to palette: prop not found", propID);
+        return false;
+    }
+
+    auto& palette = propPalettes_[paletteIndex];
+    for (const auto& entry : palette.entries) {
+        if (entry.propID.value() == propID) {
+            return false;
+        }
+    }
+
+    palette.entries.push_back(PaletteEntry{
+        rfl::Hex<uint32_t>(propID),
+        1.0f
+    });
+    activePropPaletteIndex_ = paletteIndex;
+    SaveFavorites_();
+    return true;
+}
+
+void SC4AdvancedLotPlopDirector::AddPropToNewPalette(const uint32_t propID, const std::string& baseName) {
+    const std::string defaultName = BuildDefaultPaletteName_(baseName);
+    std::string candidateName = defaultName;
+    int suffix = 2;
+
+    while (std::any_of(propPalettes_.begin(), propPalettes_.end(), [&](const PropPalette& palette) {
+        return palette.name == candidateName;
+    })) {
+        candidateName = defaultName + " (" + std::to_string(suffix++) + ")";
+    }
+
+    if (!CreatePropPalette(candidateName)) {
+        return;
+    }
+    AddPropToPalette(propID, activePropPaletteIndex_);
+}
+
+bool SC4AdvancedLotPlopDirector::AddPropFamilyToNewPalette(const uint32_t familyID) {
+    if (familyID == 0) {
+        return false;
+    }
+
+    std::unordered_set<uint32_t> uniquePropIds;
+    for (const auto& prop : props_) {
+        if (std::any_of(prop.familyIds.begin(), prop.familyIds.end(), [familyID](const rfl::Hex<uint32_t>& id) {
+            return id.value() == familyID;
+        })) {
+            uniquePropIds.insert(prop.instanceId.value());
+        }
+    }
+
+    if (uniquePropIds.empty()) {
+        return false;
+    }
+
+    std::string baseName;
+    if (const auto it = propFamilyNames_.find(familyID); it != propFamilyNames_.end() && !it->second.empty()) {
+        baseName = it->second;
+    }
+    else {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "Family 0x%08X", familyID);
+        baseName = buffer;
+    }
+
+    std::string candidateName = BuildDefaultPaletteName_(baseName);
+    int suffix = 2;
+    while (std::any_of(propPalettes_.begin(), propPalettes_.end(), [&](const PropPalette& palette) {
+        return palette.name == candidateName;
+    })) {
+        candidateName = BuildDefaultPaletteName_(baseName) + " (" + std::to_string(suffix++) + ")";
+    }
+
+    PropPalette palette;
+    palette.name = std::move(candidateName);
+    palette.entries.reserve(uniquePropIds.size());
+    for (const auto propId : uniquePropIds) {
+        palette.entries.push_back(PaletteEntry{
+            rfl::Hex<uint32_t>(propId),
+            1.0f
+        });
+    }
+
+    propPalettes_.push_back(std::move(palette));
+    activePropPaletteIndex_ = propPalettes_.size() - 1;
+    SaveFavorites_();
+    return true;
+}
+
+void SC4AdvancedLotPlopDirector::SaveFavoritesNow() const {
+    SaveFavorites_();
 }
 
 bool SC4AdvancedLotPlopDirector::StartPropPainting(uint32_t propId, const PropPaintSettings& settings,
@@ -256,22 +481,14 @@ bool SC4AdvancedLotPlopDirector::StartPropPainting(uint32_t propId, const PropPa
         spdlog::warn("Cannot start prop painting: city or view not available");
         return false;
     }
-    if (propPainting_ && pView3D_ && pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
-        return SwitchPropPaintingTarget(propId, name);
-    }
 
     if (!propPainterControl_) {
         auto* control = new PropPainterInputControl();
         propPainterControl_ = control;
-
-        propPainterControl_->SetCity(pCity_);
-        propPainterControl_->SetWindow(pView3D_->AsIGZWin());
-        propPainterControl_->SetCameraService(cameraService_);
-        propPainterControl_->SetOnCancel([this]() {
-            if (propPainting_) {
-                StopPropPainting();
-            }
-        });
+        if (! propPainterControl_) {
+            spdlog::error("Failed to allocate PropPainterInputControl");
+            return false;
+        }
 
         if (!propPainterControl_->Init()) {
             spdlog::error("Failed to initialize PropPainterInputControl");
@@ -280,33 +497,29 @@ bool SC4AdvancedLotPlopDirector::StartPropPainting(uint32_t propId, const PropPa
         }
     }
 
-    propPainterControl_->SetPropToPaint(propId, settings, name);
+    propPainterControl_->SetCity(pCity_);
+    propPainterControl_->SetWindow(pView3D_->AsIGZWin());
+    propPainterControl_->SetCameraService(cameraService_);
+    propPainterControl_->SetOnCancel([this]() {
+        if (pView3D_ && propPainterControl_ &&
+            pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
+            pView3D_->RemoveCurrentViewInputControl(false);
+        }
+        propPainting_ = false;
+        spdlog::info("Stopped prop painting");
+    });
 
-    pView3D_->RemoveAllViewInputControls(false);
-    pView3D_->AddPersistentViewInputControl(propPainterControl_);
+    propPainterControl_->SetPropToPaint(propId, settings, name);
+    if (!pView3D_->SetCurrentViewInputControl(
+        propPainterControl_,
+        cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
+        spdlog::warn("Failed to set prop painter as current view input control");
+        return false;
+    }
 
     propPainting_ = true;
     spdlog::info("Started prop painting: 0x{:08X}, rotation {}", propId, settings.rotation);
     return true;
-}
-
-void SC4AdvancedLotPlopDirector::StopPropPainting() {
-    if (!pView3D_) {
-        spdlog::debug("StopPropPainting called without View3D");
-        return;
-    }
-    if (!propPainting_) {
-        spdlog::debug("StopPropPainting called while not painting");
-        return;
-    }
-
-    pView3D_->RemoveCurrentViewInputControl(false);
-    propPainting_ = false;
-    spdlog::info("Stopped prop painting");
-}
-
-bool SC4AdvancedLotPlopDirector::IsPropPainting() const {
-    return propPainting_;
 }
 
 bool SC4AdvancedLotPlopDirector::SwitchPropPaintingTarget(uint32_t propId, const std::string& name) {
@@ -318,9 +531,52 @@ bool SC4AdvancedLotPlopDirector::SwitchPropPaintingTarget(uint32_t propId, const
     }
 
     const auto& settings = propPainterControl_->GetSettings();
-    propPainterControl_->SetPropToPaint(propId, settings, name);
-    spdlog::info("Switched prop paint target: 0x{:08X}, rotation {}", propId, settings.rotation);
-    return true;
+    return StartPropPainting(propId, settings, name);
+}
+
+void SC4AdvancedLotPlopDirector::StopPropPainting() {
+    if (pView3D_ && propPainterControl_) {
+        if (pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
+            pView3D_->RemoveCurrentViewInputControl(false);
+        }
+    }
+
+    propPainting_ = false;
+    spdlog::info("Stopped prop painting");
+}
+
+bool SC4AdvancedLotPlopDirector::IsPropPainting() const {
+    return propPainting_;
+}
+
+void SC4AdvancedLotPlopDirector::DrawOverlayCallback_(const DrawServicePass pass, const bool begin, void* pThis) {
+    if (pass != DrawServicePass::PreDynamic || begin) {
+        return;
+    }
+
+    auto* director = static_cast<SC4AdvancedLotPlopDirector*>(pThis);
+    if (!director || !director->imguiService_ || !director->propPainting_ || !director->propPainterControl_) {
+        return;
+    }
+
+    IDirect3DDevice7* device = nullptr;
+    IDirectDraw7* dd = nullptr;
+    if (!director->imguiService_->AcquireD3DInterfaces(&device, &dd)) {
+        return;
+    }
+
+    director->propPainterControl_->DrawOverlay(device);
+    device->Release();
+    dd->Release();
+}
+
+void SC4AdvancedLotPlopDirector::SetLotPlopPanelVisible(const bool visible) {
+    if (!imguiService_ || !panelRegistered_ || !panel_) {
+        return;
+    }
+
+    panelVisible_ = visible;
+    panel_->SetOpen(visible);
 }
 
 void SC4AdvancedLotPlopDirector::PostCityInit_(const cIGZMessage2Standard* pStandardMsg) {
@@ -345,6 +601,9 @@ void SC4AdvancedLotPlopDirector::PostCityInit_(const cIGZMessage2Standard* pStan
 void SC4AdvancedLotPlopDirector::PreCityShutdown_(cIGZMessage2Standard* pStandardMsg) {
     SetLotPlopPanelVisible(false);
     StopPropPainting();
+    if (propPainterControl_) {
+        propPainterControl_->SetCity(nullptr);
+    }
     pCity_ = nullptr;
     if (pView3D_) {
         pView3D_->Release();
@@ -431,19 +690,22 @@ void SC4AdvancedLotPlopDirector::LoadLots_() {
         auto result = rfl::cbor::load<std::vector<Building>>(cborPath.string());
         if (result) {
             buildings_ = std::move(*result);
+            buildingsById_ = std::unordered_map<uint64_t, Building>(buildings_.size());
 
             size_t lotCount = 0;
             std::unordered_set<uint64_t> lotKeys;
             size_t duplicateLots = 0;
             for (const auto& b : buildings_) {
+                buildingsById_.emplace(MakeGIKey(b.groupId.value(), b.instanceId.value()), b);
                 for (const auto& lot : b.lots) {
                     ++lotCount;
-                    const uint64_t key = (static_cast<uint64_t>(lot.groupId.value()) << 32) | lot.instanceId.value();
+                    const uint64_t key = MakeGIKey(lot.groupId.value(), lot.instanceId.value());
                     if (!lotKeys.insert(key).second) {
                         ++duplicateLots;
                         spdlog::warn("Duplicate lot in CBOR: group=0x{:08X}, instance=0x{:08X}", lot.groupId.value(),
                                      lot.instanceId.value());
                     }
+                    lotsById_.emplace(key, lot);
                 }
             }
 
@@ -471,12 +733,42 @@ void SC4AdvancedLotPlopDirector::LoadProps_() {
             return;
         }
 
-        if (auto result = rfl::cbor::load<std::vector<Prop>>(cborPath.string())) {
-            spdlog::info("Loaded {} props from {}", result->size(), cborPath.string());
-            props_ = std::move(*result);
+        props_.clear();
+        propsById_.clear();
+        propFamilyNames_.clear();
+
+        auto rebuildPropIndexes = [this]() {
+            propsById_ = std::unordered_map<uint64_t, Prop>(props_.size());
+            for (const auto& p : props_) {
+                propsById_.emplace((static_cast<uint64_t>(p.groupId.value()) << 32) | p.instanceId.value(), p);
+            }
+        };
+
+        if (auto result = rfl::cbor::load<PropsCache>(cborPath.string())) {
+            props_ = std::move(result->props);
+            propFamilyNames_.clear();
+            for (const auto& family : result->propFamilies) {
+                if (!family.displayName.empty()) {
+                    propFamilyNames_.emplace(family.familyId.value(), family.displayName);
+                }
+            }
+            rebuildPropIndexes();
+
+            spdlog::info("Loaded {} props and {} prop families from {}",
+                         props_.size(), propFamilyNames_.size(), cborPath.string());
+            return;
+        }
+
+        if (auto legacyResult = rfl::cbor::load<std::vector<Prop>>(cborPath.string())) {
+            props_ = std::move(*legacyResult);
+            propFamilyNames_.clear();
+            rebuildPropIndexes();
+
+            spdlog::info("Loaded {} props from legacy cache format in {}",
+                         props_.size(), cborPath.string());
         }
         else {
-            spdlog::error("Failed to load props from CBOR file: {}", result.error().what());
+            spdlog::error("Failed to load props from CBOR file: {}", legacyResult.error().what());
         }
     }
     catch (const std::exception& e) {
@@ -491,6 +783,10 @@ void SC4AdvancedLotPlopDirector::LoadFavorites_() {
 
         if (!std::filesystem::exists(cborPath)) {
             spdlog::info("Favorites file not found, starting with empty favorites");
+            favoriteLotIds_.clear();
+            favoritePropIds_.clear();
+            propPalettes_.clear();
+            activePropPaletteIndex_ = 0;
             return;
         }
 
@@ -498,7 +794,7 @@ void SC4AdvancedLotPlopDirector::LoadFavorites_() {
             // Extract lot favorites from the loaded data
             favoriteLotIds_.clear();
             for (const auto& hexId : result->lots.items) {
-                favoriteLotIds_.insert(hexId.value());
+                favoriteLotIds_.insert(static_cast<uint32_t>(hexId.value()));
             }
             favoritePropIds_.clear();
             if (result->props) {
@@ -506,6 +802,22 @@ void SC4AdvancedLotPlopDirector::LoadFavorites_() {
                     favoritePropIds_.insert(hexId.value());
                 }
             }
+
+            propPalettes_.clear();
+            if (result->palettes) {
+                propPalettes_ = *result->palettes;
+
+                for (auto& palette : propPalettes_) {
+                    palette.densityVariation = std::clamp(palette.densityVariation, 0.0f, 1.0f);
+                    std::erase_if(palette.entries, [this](const PaletteEntry& entry) {
+                        return FindPropByInstanceId_(entry.propID.value()) == nullptr;
+                    });
+                    for (auto& entry : palette.entries) {
+                        entry.weight = std::max(0.1f, entry.weight);
+                    }
+                }
+            }
+            activePropPaletteIndex_ = 0;
             spdlog::info("Loaded {} favorite lots from {}", favoriteLotIds_.size(), cborPath.string());
         }
         else {
@@ -524,7 +836,7 @@ void SC4AdvancedLotPlopDirector::SaveFavorites_() const {
 
         // Build the AllFavorites structure
         AllFavorites allFavorites;
-        allFavorites.version = 1;
+        allFavorites.version = 2;
 
         // Convert favorites set to vector of Hex<uint32_t>
         for (uint32_t id : favoriteLotIds_) {
@@ -550,6 +862,12 @@ void SC4AdvancedLotPlopDirector::SaveFavorites_() const {
             allFavorites.props = std::nullopt;
         }
         allFavorites.flora = std::nullopt;
+        if (propPalettes_.empty()) {
+            allFavorites.palettes = std::nullopt;
+        }
+        else {
+            allFavorites.palettes = propPalettes_;
+        }
 
         // Save to CBOR file
         if (const auto saveResult = rfl::cbor::save(cborPath.string(), allFavorites)) {
@@ -562,6 +880,21 @@ void SC4AdvancedLotPlopDirector::SaveFavorites_() const {
     catch (const std::exception& e) {
         spdlog::error("Error saving favorites: {}", e.what());
     }
+}
+
+const Prop* SC4AdvancedLotPlopDirector::FindPropByInstanceId_(const uint32_t propID) const {
+    for (const auto& prop : props_) {
+        if (prop.instanceId.value() == propID) {
+            return &prop;
+        }
+    }
+    return nullptr;
+}
+
+std::string SC4AdvancedLotPlopDirector::BuildDefaultPaletteName_(const std::string& baseName) {
+    std::string name = baseName.empty() ? std::string("Palette") : baseName;
+    name += " mix";
+    return name;
 }
 
 std::filesystem::path SC4AdvancedLotPlopDirector::GetUserPluginsPath_() {
@@ -579,8 +912,4 @@ std::filesystem::path SC4AdvancedLotPlopDirector::GetUserPluginsPath_() {
         spdlog::error("Failed to get DLL directory: {}", e.what());
         return {};
     }
-}
-
-uint64_t SC4AdvancedLotPlopDirector::MakePropKey_(uint32_t groupId, uint32_t instanceId) {
-    return (static_cast<uint64_t>(groupId) << 32) | instanceId;
 }
