@@ -1,10 +1,12 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "PanelTab.hpp"
 #include "PropPainterInputControl.hpp"
 #include "ThumbnailCache.hpp"
+#include "../shared/entities.hpp"
 
 class FamiliesPanelTab : public PanelTab {
 public:
@@ -18,14 +20,13 @@ public:
 
 private:
     ImGuiTexture LoadPropTexture_(uint64_t propKey);
-    const Prop* FindPropByInstanceID_(uint32_t propID) const;
     void RenderEntryDetail_(size_t displayIndex);
-    void RenderGameFamilyDetail_(size_t displayIndex);
-    void RenderManualPaletteDetail_(size_t displayIndex);
-    void RenderPaintControls_();
+    void RenderGameFamilyDetail_(size_t displayIndex, const std::vector<PaletteEntry>& resolved);
+    void RenderManualPaletteDetail_(size_t displayIndex, const std::vector<PaletteEntry>& resolved);
+    void RenderPaintControls_(size_t displayIndex, const std::vector<PaletteEntry>& resolved);
     void RenderNewPalettePopup_();
     void RenderDeleteEntryPopup_(size_t displayIndex);
-    bool StartPainting_(PropPaintMode mode);
+    bool StartPainting_(PropPaintMode mode, size_t displayIndex, const std::vector<PaletteEntry>& resolved);
     static std::string PropDisplayName_(const Prop& prop);
 
 private:

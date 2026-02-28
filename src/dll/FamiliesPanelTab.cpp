@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <unordered_map>
 
 #include "SC4AdvancedLotPlopDirector.hpp"
 #include "Utils.hpp"
@@ -42,7 +43,6 @@ void FamiliesPanelTab::OnRender() {
         for (size_t i = 0; i < displayList.size(); ++i) {
             const auto& de = displayList[i];
             if (hasSearch) {
-                // Case-insensitive substring match
                 std::string nameLower = de.name;
                 std::string searchLower = searchStr;
                 std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
@@ -74,7 +74,6 @@ void FamiliesPanelTab::OnRender() {
 
     ImGui::Separator();
 
-    // ── Entry detail ─────────────────────────────────────────────────────────
     if (activeIndex < displayList.size()) {
         RenderEntryDetail_(activeIndex);
     }
@@ -88,21 +87,18 @@ void FamiliesPanelTab::RenderEntryDetail_(const size_t displayIndex) {
     if (displayIndex >= displayList.size()) return;
     const auto& de = displayList[displayIndex];
 
-    // Name (editable)
     char nameBuffer[128] = {};
     std::strncpy(nameBuffer, de.name.c_str(), sizeof(nameBuffer) - 1);
     if (ImGui::InputText("Name##famname", nameBuffer, sizeof(nameBuffer))) {
         director_->RenameFamilyEntry(displayIndex, nameBuffer);
     }
 
-    // Star toggle
     ImGui::SameLine();
     const bool starred = de.starred;
     if (ImGui::SmallButton(starred ? "Unstar" : "Star")) {
         director_->SetFamilyStarred(displayIndex, !starred);
     }
 
-    // Delete button (only for stored entries — manual palettes or overridden game families)
     if (de.storedIndex >= 0) {
         ImGui::SameLine();
         if (ImGui::SmallButton("X##deleteentry")) {
@@ -117,29 +113,33 @@ void FamiliesPanelTab::RenderEntryDetail_(const size_t displayIndex) {
 
     ImGui::Separator();
 
+    // Resolve props once; pass to sub-renders so they don't repeat the call
+    const auto resolved = director_->ResolveFamilyProps(displayIndex);
+
     if (de.familyId.has_value()) {
-        RenderGameFamilyDetail_(displayIndex);
+        RenderGameFamilyDetail_(displayIndex, resolved);
     }
     else {
-        RenderManualPaletteDetail_(displayIndex);
+        RenderManualPaletteDetail_(displayIndex, resolved);
     }
 }
 
-void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex) {
-    const auto resolvedProps = director_->ResolveFamilyProps(displayIndex);
+void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex, const std::vector<PaletteEntry>& resolved) {
     const auto* stored = director_->GetStoredFamilyEntry(displayIndex);
 
-    // Build exclude/weight lookup from stored entry
+    // Build per-prop override lookups from stored entry
     std::unordered_map<uint32_t, float> storedWeights;
     std::unordered_set<uint32_t> storedExcluded;
+    std::unordered_set<uint32_t> storedPinned;
     if (stored) {
         for (const auto& cfg : stored->propConfigs) {
-            if (cfg.excluded) storedExcluded.insert(cfg.propID.value());
-            else storedWeights[cfg.propID.value()] = cfg.weight;
+            const uint32_t id = cfg.propID.value();
+            if (cfg.excluded) storedExcluded.insert(id);
+            else storedWeights[id] = cfg.weight;
+            if (cfg.pinned) storedPinned.insert(id);
         }
     }
 
-    // Collect full family prop set (before exclude filter) for the table
     const auto& de = director_->GetFamilyDisplayList()[displayIndex];
     const uint32_t famId = *de.familyId;
     const auto& props = director_->GetProps();
@@ -148,6 +148,7 @@ void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex) {
         uint32_t propID;
         const Prop* prop;
         bool excluded;
+        bool pinned;
         float weight;
     };
     std::vector<FamilyPropRow> rows;
@@ -158,10 +159,11 @@ void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex) {
         }
         const uint32_t propId = prop.instanceId.value();
         FamilyPropRow row;
-        row.propID = propId;
-        row.prop = &prop;
+        row.propID  = propId;
+        row.prop    = &prop;
         row.excluded = storedExcluded.count(propId) > 0;
-        row.weight = storedWeights.count(propId) ? storedWeights.at(propId) : 1.0f;
+        row.pinned   = storedPinned.count(propId)   > 0;
+        row.weight   = storedWeights.count(propId)  ? storedWeights.at(propId) : 1.0f;
         rows.push_back(row);
     }
 
@@ -173,13 +175,14 @@ void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex) {
         ImGui::TextDisabled("No props found for this family.");
     }
     else {
-        if (ImGui::BeginTable("FamilyProps", 4,
+        if (ImGui::BeginTable("FamilyProps", 5,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
                               ImVec2(0, 200))) {
             ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, 26.0f);
-            ImGui::TableSetupColumn("Prop", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Prop",   ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Weight", ImGuiTableColumnFlags_WidthFixed, 110.0f);
-            ImGui::TableSetupColumn("Excl", ImGuiTableColumnFlags_WidthFixed, 36.0f);
+            ImGui::TableSetupColumn("Pin",    ImGuiTableColumnFlags_WidthFixed, 30.0f);
+            ImGui::TableSetupColumn("Excl",   ImGuiTableColumnFlags_WidthFixed, 36.0f);
             ImGui::TableHeadersRow();
 
             for (auto& row : rows) {
@@ -218,6 +221,14 @@ void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex) {
                 }
                 ImGui::EndDisabled();
 
+                // Pin checkbox
+                ImGui::TableNextColumn();
+                bool pinned = row.pinned;
+                if (ImGui::Checkbox("##p", &pinned)) {
+                    director_->SetFamilyPropPinned(displayIndex, row.propID, pinned);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Force-include even if excluded");
+
                 // Exclude checkbox
                 ImGui::TableNextColumn();
                 bool excl = row.excluded;
@@ -236,81 +247,102 @@ void FamiliesPanelTab::RenderGameFamilyDetail_(const size_t displayIndex) {
     }
 
     ImGui::Separator();
-    RenderPaintControls_();
+    RenderPaintControls_(displayIndex, resolved);
 }
 
-void FamiliesPanelTab::RenderManualPaletteDetail_(const size_t displayIndex) {
+void FamiliesPanelTab::RenderManualPaletteDetail_(const size_t displayIndex, const std::vector<PaletteEntry>& resolved) {
     const auto* stored = director_->GetStoredFamilyEntry(displayIndex);
-    if (!stored) {
+    if (!stored || stored->propConfigs.empty()) {
         ImGui::TextDisabled("Empty palette. Use '+' in the Props tab to add props.");
+        ImGui::Separator();
+        RenderPaintControls_(displayIndex, resolved);
         return;
     }
 
     const auto& entries = stored->propConfigs;
     ImGui::Text("%zu props in palette", entries.size());
 
-    if (entries.empty()) {
-        ImGui::TextDisabled("Empty palette. Use '+' in the Props tab to add props.");
+    // Build instanceId → Prop* map once for the whole table (avoids O(n) per row)
+    std::unordered_map<uint32_t, const Prop*> propsByInstId;
+    for (const auto& prop : director_->GetProps()) {
+        propsByInstId[prop.instanceId.value()] = &prop;
     }
-    else {
-        if (ImGui::BeginTable("PaletteEntries", 3,
-                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
-                              ImVec2(0, 200))) {
-            ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, 26.0f);
-            ImGui::TableSetupColumn("Prop", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Weight", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-            ImGui::TableHeadersRow();
 
-            for (size_t i = 0; i < entries.size(); ++i) {
-                const auto& cfg = entries[i];
-                const uint32_t propId = cfg.propID.value();
-                const Prop* prop = FindPropByInstanceID_(propId);
-                const uint64_t key = prop ? MakeGIKey(prop->groupId.value(), prop->instanceId.value()) : 0;
+    if (ImGui::BeginTable("PaletteEntries", 4,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                          ImVec2(0, 200))) {
+        ImGui::TableSetupColumn("##icon",   ImGuiTableColumnFlags_WidthFixed, 26.0f);
+        ImGui::TableSetupColumn("Prop",     ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Weight",   ImGuiTableColumnFlags_WidthFixed, 110.0f);
+        ImGui::TableSetupColumn("##remove", ImGuiTableColumnFlags_WidthFixed, 22.0f);
+        ImGui::TableHeadersRow();
 
-                ImGui::PushID(static_cast<int>(i));
-                ImGui::TableNextRow();
+        bool removed = false;
+        for (size_t i = 0; i < entries.size() && !removed; ++i) {
+            const auto& cfg = entries[i];
+            const uint32_t propId = cfg.propID.value();
+            const auto it = propsByInstId.find(propId);
+            const Prop* prop = (it != propsByInstId.end()) ? it->second : nullptr;
+            const uint64_t key = prop ? MakeGIKey(prop->groupId.value(), prop->instanceId.value()) : 0;
 
-                ImGui::TableNextColumn();
-                if (prop && prop->thumbnail) {
-                    thumbnailCache_.Request(key);
-                    auto tex = thumbnailCache_.Get(key);
-                    if (tex.has_value() && *tex != nullptr) ImGui::Image(*tex, ImVec2(20, 20));
-                    else ImGui::Dummy(ImVec2(20, 20));
-                }
-                else {
-                    ImGui::Dummy(ImVec2(20, 20));
-                }
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::TableNextRow();
 
-                ImGui::TableNextColumn();
-                if (prop) ImGui::TextUnformatted(PropDisplayName_(*prop).c_str());
-                else ImGui::Text("Missing 0x%08X", propId);
-
-                ImGui::TableNextColumn();
-                ImGui::SetNextItemWidth(-1.0f);
-                float weight = cfg.weight;
-                if (ImGui::SliderFloat("##w", &weight, 0.1f, 10.0f, "%.1f")) {
-                    director_->SetFamilyPropWeight(displayIndex, propId, weight);
-                }
-
-                ImGui::PopID();
+            ImGui::TableNextColumn();
+            if (prop && prop->thumbnail) {
+                thumbnailCache_.Request(key);
+                auto tex = thumbnailCache_.Get(key);
+                if (tex.has_value() && *tex != nullptr) ImGui::Image(*tex, ImVec2(20, 20));
+                else ImGui::Dummy(ImVec2(20, 20));
+            }
+            else {
+                ImGui::Dummy(ImVec2(20, 20));
             }
 
-            ImGui::EndTable();
+            ImGui::TableNextColumn();
+            if (prop) ImGui::TextUnformatted(PropDisplayName_(*prop).c_str());
+            else ImGui::Text("Missing 0x%08X", propId);
 
-            thumbnailCache_.ProcessLoadQueue([this](const uint64_t key) {
-                return LoadPropTexture_(key);
-            });
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1.0f);
+            float weight = cfg.weight;
+            if (ImGui::SliderFloat("##w", &weight, 0.1f, 10.0f, "%.1f")) {
+                director_->SetFamilyPropWeight(displayIndex, propId, weight);
+            }
+
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("x")) {
+                director_->RemovePropFromManualPalette(displayIndex, propId);
+                removed = true;  // entries pointer now invalid; bail out of loop
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove from palette");
+
+            ImGui::PopID();
         }
+
+        ImGui::EndTable();
+
+        thumbnailCache_.ProcessLoadQueue([this](const uint64_t key) {
+            return LoadPropTexture_(key);
+        });
     }
 
     ImGui::Separator();
-    RenderPaintControls_();
+    RenderPaintControls_(displayIndex, resolved);
 }
 
-void FamiliesPanelTab::RenderPaintControls_() {
-    const size_t activeIndex = director_->GetActiveFamilyIndex();
-    const auto resolved = director_->ResolveFamilyProps(activeIndex);
-    ImGui::TextUnformatted("Paint Defaults");
+void FamiliesPanelTab::RenderPaintControls_(const size_t displayIndex, const std::vector<PaletteEntry>& resolved) {
+    ImGui::TextUnformatted("Paint Settings");
+
+    // Density variation is stored per entry
+    const auto* stored = director_->GetStoredFamilyEntry(displayIndex);
+    float densVar = stored ? stored->densityVariation : 0.0f;
+    if (ImGui::SliderFloat("Density variation", &densVar, 0.0f, 1.0f, "%.2f")) {
+        director_->SetFamilyDensityVariation(displayIndex, densVar);
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Spread in placement density across individual props (0 = uniform)");
+
     ImGui::SliderFloat("Line spacing (m)", &paintDefaults_.spacingMeters, 0.5f, 50.0f, "%.1f");
     ImGui::SliderFloat("Polygon density (/100 m^2)", &paintDefaults_.densityPer100Sqm, 0.1f, 20.0f, "%.1f");
     ImGui::Checkbox("Align to path", &paintDefaults_.alignToPath);
@@ -325,34 +357,31 @@ void FamiliesPanelTab::RenderPaintControls_() {
 
     const bool canPaint = !resolved.empty();
     if (!canPaint) ImGui::BeginDisabled();
-    if (ImGui::Button("Paint line")) StartPainting_(PropPaintMode::Line);
+    if (ImGui::Button("Paint line"))    StartPainting_(PropPaintMode::Line,    displayIndex, resolved);
     ImGui::SameLine();
-    if (ImGui::Button("Paint polygon")) StartPainting_(PropPaintMode::Polygon);
+    if (ImGui::Button("Paint polygon")) StartPainting_(PropPaintMode::Polygon, displayIndex, resolved);
     if (!canPaint) ImGui::EndDisabled();
 }
 
-bool FamiliesPanelTab::StartPainting_(const PropPaintMode mode) {
-    const size_t activeIndex = director_->GetActiveFamilyIndex();
-    const auto resolved = director_->ResolveFamilyProps(activeIndex);
+bool FamiliesPanelTab::StartPainting_(const PropPaintMode mode, const size_t displayIndex,
+                                      const std::vector<PaletteEntry>& resolved) {
     if (resolved.empty()) return false;
 
     const auto& displayList = director_->GetFamilyDisplayList();
-    const std::string name = activeIndex < displayList.size() ? displayList[activeIndex].name : "Family";
+    const std::string name = displayIndex < displayList.size() ? displayList[displayIndex].name : "Family";
 
-    const auto* stored = director_->GetStoredFamilyEntry(activeIndex);
-    const float densVar = stored ? stored->densityVariation : 0.0f;
+    const auto* stored = director_->GetStoredFamilyEntry(displayIndex);
 
     PropPaintSettings settings = paintDefaults_;
     settings.mode = mode;
     settings.activePalette = resolved;
-    settings.densityVariation = densVar;
+    settings.densityVariation = stored ? stored->densityVariation : 0.0f;
     if (settings.randomSeed == 0) {
         settings.randomSeed = static_cast<uint32_t>(
             std::chrono::high_resolution_clock::now().time_since_epoch().count());
     }
 
-    const uint32_t fallbackPropID = resolved.front().propID.value();
-    return director_->StartPropPainting(fallbackPropID, settings, name);
+    return director_->StartPropPainting(resolved.front().propID.value(), settings, name);
 }
 
 void FamiliesPanelTab::OnDeviceReset(const uint32_t deviceGeneration) {
@@ -382,13 +411,6 @@ ImGuiTexture FamiliesPanelTab::LoadPropTexture_(const uint64_t propKey) {
     }, prop.thumbnail.value());
 
     return texture;
-}
-
-const Prop* FamiliesPanelTab::FindPropByInstanceID_(const uint32_t propID) const {
-    for (const auto& prop : director_->GetProps()) {
-        if (prop.instanceId.value() == propID) return &prop;
-    }
-    return nullptr;
 }
 
 void FamiliesPanelTab::RenderNewPalettePopup_() {

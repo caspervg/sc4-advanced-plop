@@ -504,6 +504,43 @@ void SC4AdvancedLotPlopDirector::SetFamilyPropExcluded(const size_t displayIndex
     SaveFavorites_();
 }
 
+void SC4AdvancedLotPlopDirector::SetFamilyPropPinned(const size_t displayIndex, const uint32_t propID, const bool pinned) {
+    if (displayIndex >= familyDisplayList_.size()) return;
+    auto& entry = GetOrCreateStoredEntry_(displayIndex);
+    for (auto& cfg : entry.propConfigs) {
+        if (cfg.propID.value() == propID) {
+            cfg.pinned = pinned;
+            SaveFavorites_();
+            return;
+        }
+    }
+    FamilyPropConfig cfg;
+    cfg.propID = rfl::Hex<uint32_t>(propID);
+    cfg.pinned = pinned;
+    entry.propConfigs.push_back(std::move(cfg));
+    SaveFavorites_();
+}
+
+void SC4AdvancedLotPlopDirector::SetFamilyDensityVariation(const size_t displayIndex, const float densityVariation) {
+    if (displayIndex >= familyDisplayList_.size()) return;
+    auto& entry = GetOrCreateStoredEntry_(displayIndex);
+    entry.densityVariation = std::clamp(densityVariation, 0.0f, 1.0f);
+    SaveFavorites_();
+}
+
+bool SC4AdvancedLotPlopDirector::RemovePropFromManualPalette(const size_t displayIndex, const uint32_t propID) {
+    if (displayIndex >= familyDisplayList_.size()) return false;
+    const auto& de = familyDisplayList_[displayIndex];
+    if (de.storedIndex < 0 || static_cast<size_t>(de.storedIndex) >= familyEntries_.size()) return false;
+    auto& entry = familyEntries_[de.storedIndex];
+    const auto it = std::find_if(entry.propConfigs.begin(), entry.propConfigs.end(),
+        [propID](const FamilyPropConfig& cfg) { return cfg.propID.value() == propID; });
+    if (it == entry.propConfigs.end()) return false;
+    entry.propConfigs.erase(it);
+    SaveFavorites_();
+    return true;
+}
+
 bool SC4AdvancedLotPlopDirector::CreateManualPalette(const std::string& name) {
     if (name.empty()) return false;
     for (const auto& entry : familyEntries_) {

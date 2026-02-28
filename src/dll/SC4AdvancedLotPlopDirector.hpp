@@ -92,13 +92,16 @@ public:
     void SetFamilyStarred(size_t displayIndex, bool starred);
     void SetFamilyPropWeight(size_t displayIndex, uint32_t propID, float weight);
     void SetFamilyPropExcluded(size_t displayIndex, uint32_t propID, bool excluded);
+    void SetFamilyPropPinned(size_t displayIndex, uint32_t propID, bool pinned);
+    void SetFamilyDensityVariation(size_t displayIndex, float densityVariation);
     bool CreateManualPalette(const std::string& name);
     bool DeleteFamilyEntry(size_t displayIndex);
     bool RenameFamilyEntry(size_t displayIndex, const std::string& newName);
 
-    // Props tab: add props to manual palettes
+    // Props tab / manual palette mutations
     [[nodiscard]] std::vector<std::pair<size_t, std::string>> GetManualPaletteList() const;
     bool AddPropToManualPalette(uint32_t propID, size_t familyEntryIndex);
+    bool RemovePropFromManualPalette(size_t displayIndex, uint32_t propID);
     void AddPropToNewManualPalette(uint32_t propID, const std::string& baseName);
 
     void SaveFavoritesNow() const;
