@@ -58,9 +58,9 @@ const Prop* PropRepository::FindPropByInstanceId(const uint32_t instanceId) cons
 }
 
 void PropRepository::RebuildIndexes_() {
-    propsById_ = std::unordered_map<uint64_t, Prop>(props_.size());
+    propsById_ = std::unordered_map<uint64_t, const Prop*>(props_.size());
     for (const auto& p : props_) {
-        propsById_.emplace((static_cast<uint64_t>(p.groupId.value()) << 32) | p.instanceId.value(), p);
+        propsById_.emplace((static_cast<uint64_t>(p.groupId.value()) << 32) | p.instanceId.value(), &p);
     }
 }
 

@@ -69,13 +69,17 @@ ImGuiTexture PropPanelTab::LoadPropTexture_(uint64_t propKey) {
         LOG_WARN("Could not find prop with key 0x{:016X} in props map", propKey);
         return texture;
     }
-    const auto& prop = propsById.at(propKey);
-    if (!prop.thumbnail.has_value()) {
+    const Prop* prop = propsById.at(propKey);
+    if (!prop) {
+        LOG_WARN("Prop index entry for key 0x{:016X} is null", propKey);
+        return texture;
+    }
+    if (!prop->thumbnail.has_value()) {
         LOG_WARN("Prop with key 0x{:016X} has no thumbnail", propKey);
         return texture;
     }
 
-    const auto& thumbnail = prop.thumbnail.value();
+    const auto& thumbnail = prop->thumbnail.value();
 
     rfl::visit([&](const auto& variant) {
         const auto& data = variant.data;

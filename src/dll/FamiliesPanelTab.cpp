@@ -403,8 +403,8 @@ ImGuiTexture FamiliesPanelTab::LoadPropTexture_(const uint64_t propKey) {
         return texture;
     }
 
-    const auto& prop = propsById.at(propKey);
-    if (!prop.thumbnail.has_value()) {
+    const Prop* prop = propsById.at(propKey);
+    if (!prop || !prop->thumbnail.has_value()) {
         return texture;
     }
 
@@ -423,7 +423,7 @@ ImGuiTexture FamiliesPanelTab::LoadPropTexture_(const uint64_t propKey) {
         }
 
         texture.Create(imguiService_, width, height, data.data());
-    }, prop.thumbnail.value());
+    }, prop->thumbnail.value());
 
     return texture;
 }
