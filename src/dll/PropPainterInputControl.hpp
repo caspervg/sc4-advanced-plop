@@ -106,8 +106,10 @@ private:
     void ExecuteLinePlacement_();
     void ExecutePolygonPlacement_();
 
+    void UndoLastPlacementInGroup();
     bool PlacePropAt_(int32_t screenX, int32_t screenZ);
     bool PlacePropAtWorld_(const cS3DVector3& position, int32_t rotation, uint32_t propID);
+    [[nodiscard]] size_t PendingPlacementCount_() const;
     [[nodiscard]] cISTETerrain* GetTerrain_() const;
 
     cRZAutoRefCount<cISC4City> city_;
@@ -120,7 +122,13 @@ private:
     const PropRepository* propRepository_ = nullptr;
     std::function<void()> onCancel_{};
 
-    std::vector<cRZAutoRefCount<cISC4Occupant>> placedProps_;
+    struct UndoGroup {
+        std::vector<cRZAutoRefCount<cISC4Occupant>> props;
+    };
+
+    std::vector<UndoGroup> undoStack_;
+    UndoGroup currentUndoGroup_{};
+    bool batchingPlacements_ = false;
     struct CollectedPoint {
         cS3DVector3 worldPos;
     };

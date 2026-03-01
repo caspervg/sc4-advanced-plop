@@ -322,6 +322,11 @@ bool PropPainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const u
         return true;
     }
 
+    if (vkCode == VK_BACK && (modifiers & MOD_CONTROL)) {
+        UndoLastPlacementInGroup();
+        return true;
+    }
+
     if (vkCode == 'Z' && (modifiers & MOD_CONTROL)) {
         UndoLastPlacement();
         return true;
@@ -386,10 +391,10 @@ float PropPainterInputControl::GetGridStepMeters_() const {
 
 cS3DVector3 PropPainterInputControl::SnapWorldToGrid_(const cS3DVector3& position) const {
     const float gridStep = GetGridStepMeters_();
-    return cS3DVector3(
+    return {
         SnapCoordinate(position.fX, gridStep),
         position.fY,
-        SnapCoordinate(position.fZ, gridStep));
+        SnapCoordinate(position.fZ, gridStep)};
 }
 
 void PropPainterInputControl::SnapPlacementToGrid_(PlannedProp& placement) const {
@@ -551,6 +556,8 @@ void PropPainterInputControl::ExecuteLinePlacement_() {
         picker.get(),
         singlePropID);
 
+    batchingPlacements_ = true;
+    currentUndoGroup_.props.clear();
     size_t placedCount = 0;
     for (auto placement : placements) {
         SnapPlacementToGrid_(placement);
@@ -558,6 +565,11 @@ void PropPainterInputControl::ExecuteLinePlacement_() {
             ++placedCount;
         }
     }
+    batchingPlacements_ = false;
+    if (!currentUndoGroup_.props.empty()) {
+        undoStack_.push_back(std::move(currentUndoGroup_));
+    }
+    currentUndoGroup_.props.clear();
 
     LOG_INFO("Line paint executed: placed {} / {} props", placedCount, placements.size());
     ClearCollectedPoints_();
@@ -591,6 +603,8 @@ void PropPainterInputControl::ExecutePolygonPlacement_() {
         picker.get(),
         singlePropID);
 
+    batchingPlacements_ = true;
+    currentUndoGroup_.props.clear();
     size_t placedCount = 0;
     for (auto placement : placements) {
         SnapPlacementToGrid_(placement);
@@ -598,66 +612,122 @@ void PropPainterInputControl::ExecutePolygonPlacement_() {
             ++placedCount;
         }
     }
+    batchingPlacements_ = false;
+    if (!currentUndoGroup_.props.empty()) {
+        undoStack_.push_back(std::move(currentUndoGroup_));
+    }
+    currentUndoGroup_.props.clear();
 
     LOG_INFO("Polygon paint executed: placed {} / {} props", placedCount, placements.size());
     ClearCollectedPoints_();
 }
 
 void PropPainterInputControl::UndoLastPlacement() {
-    if (placedProps_.empty()) {
+    if (undoStack_.empty()) {
         LOG_DEBUG("No props to undo");
         return;
     }
 
     if (!propManager_) {
         LOG_WARN("No prop manager available during undo; clearing local placed prop history");
-        placedProps_.clear();
+        undoStack_.clear();
+        currentUndoGroup_.props.clear();
+        batchingPlacements_ = false;
         return;
     }
 
-    const auto& lastProp = placedProps_.back();
+    UndoGroup group = std::move(undoStack_.back());
+    undoStack_.pop_back();
 
+    size_t removedCount = 0;
+    for (auto it = group.props.rbegin(); it != group.props.rend(); ++it) {
+        if (propManager_->RemovePropA(*it)) {
+            ++removedCount;
+        }
+        else {
+            LOG_WARN("Failed to remove placed prop during undo");
+        }
+    }
+
+    LOG_INFO("Undid placement group: removed {} prop(s), {} remaining", removedCount, PendingPlacementCount_());
+}
+
+void PropPainterInputControl::UndoLastPlacementInGroup() {
+    if (undoStack_.empty()) {
+        LOG_DEBUG("No props to undo");
+        return;
+    }
+
+    if (!propManager_) {
+        LOG_WARN("No prop manager available during undo; clearing local placed prop history");
+        undoStack_.clear();
+        currentUndoGroup_.props.clear();
+        batchingPlacements_ = false;
+        return;
+    }
+
+    UndoGroup& group = undoStack_.back();
+    if (group.props.empty()) {
+        undoStack_.pop_back();
+        LOG_DEBUG("Dropped empty undo group");
+        return;
+    }
+
+    const auto& lastProp = group.props.back();
     if (propManager_->RemovePropA(lastProp)) {
-        LOG_INFO("Removed last placed prop ({} remaining)", placedProps_.size() - 1);
+        LOG_INFO("Undid last prop in group ({} remaining)", PendingPlacementCount_() - 1);
     }
     else {
-        LOG_WARN("Failed to remove last placed prop");
+        LOG_WARN("Failed to remove placed prop during per-prop undo");
     }
 
-    placedProps_.pop_back();
+    group.props.pop_back();
+    if (group.props.empty()) {
+        undoStack_.pop_back();
+    }
 }
 
 void PropPainterInputControl::CancelAllPlacements() {
-    if (!placedProps_.empty()) {
+    const size_t pendingCount = PendingPlacementCount_();
+    if (pendingCount > 0) {
         if (!propManager_) {
             LOG_WARN("No prop manager available during cancel; clearing local placed prop history");
-            placedProps_.clear();
+            undoStack_.clear();
         }
         else {
-            LOG_INFO("Canceling {} placed props", placedProps_.size());
+            LOG_INFO("Canceling {} placed props", pendingCount);
 
-            for (auto& prop : placedProps_) {
-                if (propManager_->RemovePropA(prop)) {
-                    LOG_DEBUG("Removed placed prop");
-                }
-                else {
-                    LOG_WARN("Failed to remove placed prop");
+            for (auto groupIt = undoStack_.rbegin(); groupIt != undoStack_.rend(); ++groupIt) {
+                for (auto propIt = groupIt->props.rbegin(); propIt != groupIt->props.rend(); ++propIt) {
+                    if (propManager_->RemovePropA(*propIt)) {
+                        LOG_DEBUG("Removed placed prop");
+                    }
+                    else {
+                        LOG_WARN("Failed to remove placed prop");
+                    }
                 }
             }
 
-            placedProps_.clear();
+            undoStack_.clear();
         }
     }
 
+    batchingPlacements_ = false;
+    currentUndoGroup_.props.clear();
     ClearCollectedPoints_();
 }
 
 void PropPainterInputControl::CommitPlacements() {
-    LOG_INFO("Committing {} placed props", placedProps_.size());
-    for (const auto& prop : placedProps_) {
-        prop->SetHighlight(0x0, true);
+    const size_t pendingCount = PendingPlacementCount_();
+    LOG_INFO("Committing {} placed props", pendingCount);
+    for (const auto& group : undoStack_) {
+        for (const auto& prop : group.props) {
+            prop->SetHighlight(0x0, true);
+        }
     }
-    placedProps_.clear();
+    undoStack_.clear();
+    batchingPlacements_ = false;
+    currentUndoGroup_.props.clear();
 }
 
 bool PropPainterInputControl::PlacePropAt_(const int32_t screenX, const int32_t screenZ) {
@@ -728,11 +798,26 @@ bool PropPainterInputControl::PlacePropAtWorld_(const cS3DVector3& position, con
     }
 
     occupant->AddRef();
-    placedProps_.emplace_back(occupant);
+    if (batchingPlacements_) {
+        currentUndoGroup_.props.emplace_back(occupant);
+    }
+    else {
+        UndoGroup group;
+        group.props.emplace_back(occupant);
+        undoStack_.push_back(std::move(group));
+    }
 
     LOG_INFO("Placed prop 0x{:08X} at ({:.2f}, {:.2f}, {:.2f}), rotation: {}",
              propToCreate, placePos.fX, placePos.fY, placePos.fZ, rotation & 3);
     return true;
+}
+
+size_t PropPainterInputControl::PendingPlacementCount_() const {
+    size_t count = 0;
+    for (const auto& group : undoStack_) {
+        count += group.props.size();
+    }
+    return count;
 }
 
 cISTETerrain* PropPainterInputControl::GetTerrain_() const {
