@@ -10,6 +10,7 @@
 #include "PropPaintPlacement.hpp"
 #include "cS3DVector3.h"
 
+class cISTETerrain;
 struct PropPaintSettings;
 
 class PropPaintOverlay {
@@ -36,18 +37,21 @@ public:
 
     void BuildDirectPreview(bool cursorValid,
                             const cS3DVector3& cursorPos,
+                            cISTETerrain* terrain,
                             const PropPaintSettings& settings,
                             const PreviewPlacement& plannedPlacement);
 
     void BuildLinePreview(const std::vector<cS3DVector3>& points,
                           const cS3DVector3& cursorPos,
                           bool cursorValid,
+                          cISTETerrain* terrain,
                           const PropPaintSettings& settings,
                           const std::vector<PreviewPlacement>& plannedPlacements);
 
     void BuildPolygonPreview(const std::vector<cS3DVector3>& vertices,
                              const cS3DVector3& cursorPos,
                              bool cursorValid,
+                             cISTETerrain* terrain,
                              const PropPaintSettings& settings,
                              const std::vector<PreviewPlacement>& plannedPlacements);
 
@@ -88,7 +92,7 @@ private:
     void EmitMarker_(const cS3DVector3& center, float size, DWORD color, uint32_t layer);
     void EmitPreviewPlacement_(const PreviewPlacement& placement, uint32_t layer);
     void EmitFilledPolygon_(const std::vector<cS3DVector3>& vertices, DWORD color, uint32_t layer);
-    void EmitGrid_(const cS3DVector3& center, const PropPaintSettings& settings);
+    void EmitGrid_(const cS3DVector3& center, cISTETerrain* terrain, const PropPaintSettings& settings);
 
 private:
     static constexpr DWORD kGridMajorColor = 0x60FFFFFF;
@@ -102,7 +106,8 @@ private:
     static constexpr DWORD kCursorColor = 0xE0FF4444;
     static constexpr float kLineThickness = 0.6f;
     static constexpr float kMarkerSize = 1.0f;
-    static constexpr float kHeightOffset = 0.18f;
+    static constexpr float kGridHeightExtraOffset = 0.05f;
+    static constexpr float kHeightOffset = 0.15f;
 
     std::array<Layer, 3> layers_{};
     SavedRenderState savedState_{};

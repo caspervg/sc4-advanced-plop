@@ -6,11 +6,13 @@
 #include <numeric>
 
 #include "PropPainterInputControl.hpp"
+#include "cISTETerrain.h"
 
 namespace {
     constexpr DWORD kFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE;
     constexpr DWORD kMaxBatchVertices = 60000;
     constexpr float kEpsilon = 1e-4f;
+    constexpr float kTerrainGridSpacing = 16.0f;
 
     struct XZPoint {
         float x;
@@ -52,6 +54,29 @@ namespace {
             return local;
         }
     }
+
+    float SampleStableTerrainHeight(cISTETerrain* terrain, const float x, const float z) {
+        if (!terrain) {
+            return 0.0f;
+        }
+
+        const float cellX = std::floor(x / kTerrainGridSpacing);
+        const float cellZ = std::floor(z / kTerrainGridSpacing);
+        const float x0 = cellX * kTerrainGridSpacing;
+        const float z0 = cellZ * kTerrainGridSpacing;
+        const float x1 = x0 + kTerrainGridSpacing;
+        const float z1 = z0 + kTerrainGridSpacing;
+        const float tx = std::clamp((x - x0) / kTerrainGridSpacing, 0.0f, 1.0f);
+        const float tz = std::clamp((z - z0) / kTerrainGridSpacing, 0.0f, 1.0f);
+
+        const float h00 = terrain->GetAltitudeAtNearestGrid(x0, z0);
+        const float h10 = terrain->GetAltitudeAtNearestGrid(x1, z0);
+        const float h01 = terrain->GetAltitudeAtNearestGrid(x0, z1);
+        const float h11 = terrain->GetAltitudeAtNearestGrid(x1, z1);
+        const float hx0 = h00 + (h10 - h00) * tx;
+        const float hx1 = h01 + (h11 - h01) * tx;
+        return hx0 + (hx1 - hx0) * tz;
+    }
 }
 
 void PropPaintOverlay::Clear() {
@@ -71,25 +96,27 @@ bool PropPaintOverlay::Empty() const {
 
 void PropPaintOverlay::BuildDirectPreview(const bool cursorValid,
                                           const cS3DVector3& cursorPos,
+                                          cISTETerrain* terrain,
                                           const PropPaintSettings& settings,
                                           const PreviewPlacement& plannedPlacement) {
     Clear();
     if (!cursorValid) {
         return;
     }
-    EmitGrid_(cursorPos, settings);
+    EmitGrid_(cursorPos, terrain, settings);
     EmitPreviewPlacement_(plannedPlacement, kLayerMarkers);
 }
 
 void PropPaintOverlay::BuildLinePreview(const std::vector<cS3DVector3>& points,
                                         const cS3DVector3& cursorPos,
                                         const bool cursorValid,
+                                        cISTETerrain* terrain,
                                         const PropPaintSettings& settings,
                                         const std::vector<PreviewPlacement>& plannedPlacements) {
     Clear();
 
     if (cursorValid) {
-        EmitGrid_(cursorPos, settings);
+        EmitGrid_(cursorPos, terrain, settings);
     }
 
     for (size_t i = 1; i < points.size(); ++i) {
@@ -112,12 +139,13 @@ void PropPaintOverlay::BuildLinePreview(const std::vector<cS3DVector3>& points,
 void PropPaintOverlay::BuildPolygonPreview(const std::vector<cS3DVector3>& vertices,
                                            const cS3DVector3& cursorPos,
                                            const bool cursorValid,
+                                           cISTETerrain* terrain,
                                            const PropPaintSettings& settings,
                                            const std::vector<PreviewPlacement>& plannedPlacements) {
     Clear();
 
     if (cursorValid) {
-        EmitGrid_(cursorPos, settings);
+        EmitGrid_(cursorPos, terrain, settings);
     }
 
     for (size_t i = 1; i < vertices.size(); ++i) {
@@ -146,7 +174,7 @@ void PropPaintOverlay::BuildPolygonPreview(const std::vector<cS3DVector3>& verti
     }
 }
 
-void PropPaintOverlay::EmitGrid_(const cS3DVector3& center, const PropPaintSettings& settings) {
+void PropPaintOverlay::EmitGrid_(const cS3DVector3& center, cISTETerrain* terrain, const PropPaintSettings& settings) {
     if (!settings.showGrid) {
         return;
     }
@@ -172,14 +200,30 @@ void PropPaintOverlay::EmitGrid_(const cS3DVector3& center, const PropPaintSetti
         const bool major = isMajorLine(x);
         const DWORD color = major ? kGridMajorColor : kGridMinorColor;
         const float thickness = major ? 0.42f : 0.26f;
-        EmitLine_(cS3DVector3(x, center.fY, zStart), cS3DVector3(x, center.fY, zEnd), thickness, color, kLayerGrid);
+        for (float z = zStart; z < zEnd - kEpsilon; z += kTerrainGridSpacing) {
+            const float nextZ = std::min(z + kTerrainGridSpacing, zEnd);
+            EmitLine_(
+                cS3DVector3(x, SampleStableTerrainHeight(terrain, x, z) + kGridHeightExtraOffset, z),
+                cS3DVector3(x, SampleStableTerrainHeight(terrain, x, nextZ) + kGridHeightExtraOffset, nextZ),
+                thickness,
+                color,
+                kLayerGrid);
+        }
     }
 
     for (float z = zStart; z <= zEnd + kEpsilon; z += gridStep) {
         const bool major = isMajorLine(z);
         const DWORD color = major ? kGridMajorColor : kGridMinorColor;
         const float thickness = major ? 0.42f : 0.26f;
-        EmitLine_(cS3DVector3(xStart, center.fY, z), cS3DVector3(xEnd, center.fY, z), thickness, color, kLayerGrid);
+        for (float x = xStart; x < xEnd - kEpsilon; x += kTerrainGridSpacing) {
+            const float nextX = std::min(x + kTerrainGridSpacing, xEnd);
+            EmitLine_(
+                cS3DVector3(x, SampleStableTerrainHeight(terrain, x, z) + kGridHeightExtraOffset, z),
+                cS3DVector3(nextX, SampleStableTerrainHeight(terrain, nextX, z) + kGridHeightExtraOffset, z),
+                thickness,
+                color,
+                kLayerGrid);
+        }
     }
 }
 

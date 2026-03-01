@@ -429,7 +429,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
             }
         }
 
-        overlay_.BuildDirectPreview(cursorValid_, currentCursorWorld_, settings_, previewPlacement);
+        overlay_.BuildDirectPreview(cursorValid_, currentCursorWorld_, GetTerrain_(), settings_, previewPlacement);
         return;
     }
 
@@ -483,7 +483,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
             }
         }
 
-        overlay_.BuildLinePreview(points, currentCursorWorld_, cursorValid_, settings_, plannedPlacements);
+        overlay_.BuildLinePreview(points, currentCursorWorld_, cursorValid_, GetTerrain_(), settings_, plannedPlacements);
         return;
     }
 
@@ -519,7 +519,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
         polygonPreviewDirty_ = false;
     }
 
-    overlay_.BuildPolygonPreview(points, currentCursorWorld_, cursorValid_, settings_, cachedPolygonPlacements_);
+    overlay_.BuildPolygonPreview(points, currentCursorWorld_, cursorValid_, GetTerrain_(), settings_, cachedPolygonPlacements_);
 }
 
 void PropPainterInputControl::ExecuteLinePlacement_() {
