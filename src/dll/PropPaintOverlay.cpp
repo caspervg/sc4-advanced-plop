@@ -396,6 +396,19 @@ void PropPaintOverlay::EmitMarker_(const cS3DVector3& center, const float size, 
 void PropPaintOverlay::EmitPreviewPlacement_(const PreviewPlacement& preview, cISTETerrain* terrain, const uint32_t layer) {
     const bool hasBounds = preview.maxX > preview.minX && preview.maxZ > preview.minZ;
     if (!hasBounds && (preview.width <= 0.0f || preview.depth <= 0.0f)) {
+        if (terrain) {
+            const float groundY =
+                SampleStableTerrainHeight(terrain, preview.placement.position.fX, preview.placement.position.fZ) + kHeightOffset;
+            const float previewY = preview.placement.position.fY + kHeightOffset;
+            if (previewY - groundY > kStiltGapThreshold) {
+                EmitLine_(
+                    cS3DVector3(preview.placement.position.fX, groundY, preview.placement.position.fZ),
+                    cS3DVector3(preview.placement.position.fX, previewY, preview.placement.position.fZ),
+                    kLineThickness * 0.4f,
+                    kPlannedStiltColor,
+                    layer);
+            }
+        }
         EmitMarker_(preview.placement.position, kMarkerSize * 0.9f, kPlannedMarkerColor, layer);
         return;
     }

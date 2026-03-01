@@ -31,6 +31,7 @@ enum class PropPaintMode {
 struct PropPaintSettings {
     PropPaintMode mode = PropPaintMode::Direct;
     int32_t rotation = 0;
+    float deltaYMeters = 0.0f;
     float spacingMeters = 5.0f;
     float densityPer100Sqm = 1.0f;
     float gridStepMeters = 16.0f;

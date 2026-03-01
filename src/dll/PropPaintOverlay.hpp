@@ -103,7 +103,7 @@ private:
     static constexpr DWORD kPlannedMarkerColor = 0xF0FF8C00;
     static constexpr DWORD kPlannedBoxTopColor = 0x70FFB347;
     static constexpr DWORD kPlannedBoxSideColor = 0x50FF8C00;
-    static constexpr DWORD kPlannedStiltColor = 0xA0FF9A33;
+    static constexpr DWORD kPlannedStiltColor = 0xA0FFD966;
     static constexpr DWORD kCursorColor = 0xE0FF4444;
     static constexpr float kLineThickness = 0.6f;
     static constexpr float kMarkerSize = 1.0f;

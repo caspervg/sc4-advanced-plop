@@ -399,6 +399,10 @@ void PropPanelTab::RenderRotationModal_() {
             ImGui::EndDisabled();
         }
         ImGui::SliderFloat("Grid step (m)", &pendingPaint_.settings.gridStepMeters, 1.0f, 16.0f, "%.1f");
+        ImGui::SliderFloat("Vertical offset (m)", &pendingPaint_.settings.deltaYMeters, 0.0f, 100.0f, "%.1f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Raises placed props above the terrain and preview grid.");
+        }
 
         if (pendingPaint_.settings.mode == PropPaintMode::Line) {
             ImGui::Separator();

@@ -35,6 +35,10 @@ namespace {
         }
         return std::round(value / gridStep) * gridStep;
     }
+
+    float ClampDeltaY(const float value) {
+        return std::max(value, 0.0f);
+    }
 }
 
 PropPainterInputControl::PropPainterInputControl()
@@ -123,6 +127,7 @@ void PropPainterInputControl::SetPropToPaint(const uint32_t propID, const PropPa
 
     propIDToPaint_ = propID;
     settings_ = settings;
+    settings_.deltaYMeters = ClampDeltaY(settings_.deltaYMeters);
     if (settings_.randomSeed == 0) {
         settings_.randomSeed = static_cast<uint32_t>(GetTickCount64() ^ static_cast<uint64_t>(propIDToPaint_));
     }
@@ -425,6 +430,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
     if (state_ == ControlState::ActiveDirect) {
         PropPaintOverlay::PreviewPlacement previewPlacement;
         previewPlacement.placement.position = currentCursorWorld_;
+        previewPlacement.placement.position.fY += settings_.deltaYMeters;
         previewPlacement.placement.rotation = settings_.rotation;
         previewPlacement.placement.propID = propIDToPaint_;
 
@@ -476,6 +482,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
             for (const auto& placement : placements) {
                 PropPaintOverlay::PreviewPlacement previewPlacement;
                 previewPlacement.placement = placement;
+                previewPlacement.placement.position.fY += settings_.deltaYMeters;
                 SnapPlacementToGrid_(previewPlacement.placement);
 
                 if (propRepository_) {
@@ -510,6 +517,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
         for (const auto& placement : placements) {
             PropPaintOverlay::PreviewPlacement previewPlacement;
             previewPlacement.placement = placement;
+            previewPlacement.placement.position.fY += settings_.deltaYMeters;
             SnapPlacementToGrid_(previewPlacement.placement);
 
             if (propRepository_) {
@@ -560,6 +568,7 @@ void PropPainterInputControl::ExecuteLinePlacement_() {
     currentUndoGroup_.props.clear();
     size_t placedCount = 0;
     for (auto placement : placements) {
+        placement.position.fY += settings_.deltaYMeters;
         SnapPlacementToGrid_(placement);
         if (PlacePropAtWorld_(placement.position, placement.rotation, placement.propID)) {
             ++placedCount;
@@ -607,6 +616,7 @@ void PropPainterInputControl::ExecutePolygonPlacement_() {
     currentUndoGroup_.props.clear();
     size_t placedCount = 0;
     for (auto placement : placements) {
+        placement.position.fY += settings_.deltaYMeters;
         SnapPlacementToGrid_(placement);
         if (PlacePropAtWorld_(placement.position, placement.rotation, placement.propID)) {
             ++placedCount;
@@ -746,6 +756,7 @@ bool PropPainterInputControl::PlacePropAt_(const int32_t screenX, const int32_t 
     if (settings_.snapPointsToGrid) {
         targetPosition = SnapWorldToGrid_(targetPosition);
     }
+    targetPosition.fY += settings_.deltaYMeters;
 
     return PlacePropAtWorld_(targetPosition, settings_.rotation, propIDToPaint_);
 }
