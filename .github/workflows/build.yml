@@ -85,7 +85,7 @@ jobs:
           $minRenderServicesVersionPath = Join-Path $rootDir "dist\MIN_SC4_RENDER_SERVICES.txt"
           $minRenderServicesVersion = (Get-Content -Path $minRenderServicesVersionPath -Raw).Trim()
           if ($minRenderServicesVersion -notmatch '^v?(\d+)\.(\d+)\.(\d+)$') {
-            throw "Invalid SC4 Render Services minimum version in $minRenderServicesVersionPath: '$minRenderServicesVersion'"
+            throw "Invalid SC4 Render Services minimum version in ${minRenderServicesVersionPath}: '$minRenderServicesVersion'"
           }
           $minRenderServicesMajor = $Matches[1]
           $minRenderServicesMinor = $Matches[2]
