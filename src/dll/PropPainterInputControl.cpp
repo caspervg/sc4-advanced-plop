@@ -187,9 +187,7 @@ void PropPainterInputControl::DrawOverlay(IDirect3DDevice7* device) {
     if (state_ == ControlState::ActiveDirect ||
         state_ == ControlState::ActiveLine ||
         state_ == ControlState::ActivePolygon) {
-        const bool hideGridWhileClicking =
-            state_ == ControlState::ActiveDirect && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        overlay_.Draw(device, !hideGridWhileClicking);
+        overlay_.Draw(device);
     }
 }
 
