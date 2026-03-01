@@ -34,12 +34,12 @@ jobs:
           ./vendor/vcpkg/bootstrap-vcpkg.bat
           echo "VCPKG_ROOT=${{ github.workspace }}/vendor/vcpkg" >> $env:GITHUB_ENV
 
-      # sc4-imgui-service (32-bit) - provides imgui.dll and SC4CustomServices.dll
+      # sc4-imgui-service (32-bit) - only imgui is needed for this package
       - name: Build sc4-imgui-service
         working-directory: vendor/sc4-imgui-service
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A Win32
-          cmake --build build --config Release --target imgui SC4CustomServices
+          cmake --build build --config Release --target imgui
 
       # Main DLL (32-bit for SC4)
       - name: Build DLL
@@ -59,7 +59,6 @@ jobs:
           mkdir -p dist-package/PLACE_IN_YOUR_PLUGINS_FOLDER
           mkdir -p dist-package/PLACE_IN_YOUR_SC4_APPS_FOLDER
 
-          cp vendor/sc4-imgui-service/build/Release/SC4CustomServices.dll dist-package/PLACE_IN_YOUR_PLUGINS_FOLDER/
           cp cmake-build-release-visual-studio/src/dll/Release/SC4AdvancedLotPlop.dll dist-package/PLACE_IN_YOUR_PLUGINS_FOLDER/SC4PlopAndPaint.dll
           cp vendor/sc4-imgui-service/build/Release/imgui.dll dist-package/PLACE_IN_YOUR_SC4_APPS_FOLDER/
           cp cmake-build-release-visual-studio-x64/src/app/Release/SC4AdvancedLotPlopCli.exe dist-package/_SC4PlopAndPaintCacheBuilder.exe
