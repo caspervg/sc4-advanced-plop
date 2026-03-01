@@ -5,7 +5,6 @@
 #include "PropPanelTab.hpp"
 #include "imgui_impl_win32.h"
 #include "OccupantGroups.hpp"
-#include "spdlog/spdlog.h"
 
 
 LotPlopPanel::LotPlopPanel(SC4PlopAndPaintDirector* director,

@@ -2,8 +2,6 @@
 #include <algorithm>
 #include <cctype>
 
-#include "spdlog/spdlog.h"
-
 bool LotFilterHelper::PassesFilters(const LotView& lot) const {
     return PassesTextFilter_(lot) &&
         PassesSizeFilter_(lot) &&

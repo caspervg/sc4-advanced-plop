@@ -6,7 +6,7 @@
 
 #include "Constants.hpp"
 #include "public/ImGuiTexture.h"
-#include "spdlog/spdlog.h"
+#include "utils/Logger.h"
 
 template<typename KeyType>
 class ThumbnailCache {
@@ -109,7 +109,7 @@ public:
             if (texture.GetID() != nullptr) {
                 Insert(key, std::move(texture));
             } else {
-                spdlog::warn("Loading texture for {} failed", key);
+                LOG_WARN("Loading texture for {} failed", key);
             }
             loaded += 1;
         }

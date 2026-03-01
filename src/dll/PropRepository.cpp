@@ -6,7 +6,7 @@
 
 #include "Utils.hpp"
 #include "rfl/cbor/load.hpp"
-#include "spdlog/spdlog.h"
+#include "utils/Logger.h"
 
 void PropRepository::Load() {
     try {
@@ -14,7 +14,7 @@ void PropRepository::Load() {
         const auto cborPath = pluginsPath / "props.cbor";
 
         if (!std::filesystem::exists(cborPath)) {
-            spdlog::warn("Prop CBOR file not found: {}", cborPath.string());
+            LOG_WARN("Prop CBOR file not found: {}", cborPath.string());
             return;
         }
 
@@ -35,15 +35,15 @@ void PropRepository::Load() {
             RebuildIndexes_();
             BuildAutoFamilies_();
 
-            spdlog::info("Loaded {} props and {} prop families from {}",
-                         props_.size(), propFamilyNames_.size(), cborPath.string());
+            LOG_INFO("Loaded {} props and {} prop families from {}",
+                     props_.size(), propFamilyNames_.size(), cborPath.string());
         }
         else {
-            spdlog::error("Failed to load props from CBOR file: {}", result.error().what());
+            LOG_ERROR("Failed to load props from CBOR file: {}", result.error().what());
         }
     }
     catch (const std::exception& e) {
-        spdlog::error("Error loading props: {}", e.what());
+        LOG_ERROR("Error loading props: {}", e.what());
     }
 }
 
@@ -99,7 +99,7 @@ std::filesystem::path PropRepository::GetPluginsPath_() {
         return std::filesystem::path(modulePath.get()).parent_path();
     }
     catch (const wil::ResultException& e) {
-        spdlog::error("PropRepository: Failed to get DLL directory: {}", e.what());
+        LOG_ERROR("PropRepository: Failed to get DLL directory: {}", e.what());
         return {};
     }
 }

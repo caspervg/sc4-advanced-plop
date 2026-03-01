@@ -4,6 +4,7 @@
 
 #include "OccupantGroups.hpp"
 #include "Utils.hpp"
+#include "utils/Logger.h"
 #include "jsoncons/staj_event.hpp"
 #include "rfl/visit.hpp"
 
@@ -48,18 +49,18 @@ ImGuiTexture BuildingsPanelTab::LoadBuildingTexture_(uint64_t buildingKey) {
     ImGuiTexture texture;
 
     if (!imguiService_) {
-        spdlog::warn("Could not load building thumbnail: imguiService_ is null");
+        LOG_WARN("Could not load building thumbnail: imguiService_ is null");
         return texture;
     }
 
     const auto& buildingsById = lots_->GetBuildingsById();
     if (!buildingsById.contains(buildingKey)) {
-        spdlog::warn("Could not find building with key 0x{:016X} in buildings map", buildingKey);
+        LOG_WARN("Could not find building with key 0x{:016X} in buildings map", buildingKey);
         return texture;
     }
     const auto& building = buildingsById.at(buildingKey);
     if (!building.thumbnail.has_value()) {
-        spdlog::warn("Building with key 0x{:016X} has no thumbnail", buildingKey);
+        LOG_WARN("Building with key 0x{:016X} has no thumbnail", buildingKey);
     }
 
     const auto& thumbnail = building.thumbnail.value();
@@ -75,8 +76,8 @@ ImGuiTexture BuildingsPanelTab::LoadBuildingTexture_(uint64_t buildingKey) {
 
         const size_t expectedSize = static_cast<size_t>(width) * height * 4;
         if (data.size() != expectedSize) {
-            spdlog::warn("Building icon data size mismatch for key 0x{:016X}: expected {}, got {}",
-                         buildingKey, expectedSize, data.size());
+            LOG_WARN("Building icon data size mismatch for key 0x{:016X}: expected {}, got {}",
+                     buildingKey, expectedSize, data.size());
             return;
         }
 

@@ -6,7 +6,6 @@
 
 #include "Utils.hpp"
 #include "rfl/visit.hpp"
-#include "spdlog/spdlog.h"
 
 const char* FamiliesPanelTab::GetTabName() const {
     return "Families";

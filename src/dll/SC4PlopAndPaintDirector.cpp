@@ -219,13 +219,13 @@ bool SC4PlopAndPaintDirector::DoMessage(cIGZMessage2* pMsg) {
 
 void SC4PlopAndPaintDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
     if (!pView3D_) {
-        spdlog::warn("Cannot plop: View3D not available (city not loaded?)");
+        LOG_WARN("Cannot plop: View3D not available (city not loaded?)");
         return;
     }
 
     cIGZCommandServerPtr pCmdServer;
     if (!pCmdServer) {
-        spdlog::warn("Cannot plop: Command server not available");
+        LOG_WARN("Cannot plop: Command server not available");
         return;
     }
 
@@ -236,7 +236,7 @@ void SC4PlopAndPaintDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
         !pCmdServer->CreateCommandParameterSet(&pCmd2) || !pCmd2) {
         if (pCmd1) pCmd1->Release();
         if (pCmd2) pCmd2->Release();
-        spdlog::error("Failed to create command parameter sets");
+        LOG_ERROR("Failed to create command parameter sets");
         return;
     }
 
@@ -254,7 +254,7 @@ void SC4PlopAndPaintDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
     // Trigger lot plop command (0xec3e82f8 is the lot plop command ID)
     pView3D_->ProcessCommand(0xec3e82f8, *pCmd1, *pCmd2);
 
-    spdlog::info("Triggered lot plop for instance ID: 0x{:08X}", lotInstanceId);
+    LOG_INFO("Triggered lot plop for instance ID: 0x{:08X}", lotInstanceId);
 
     pCmd1->Release();
     pCmd2->Release();
@@ -263,7 +263,7 @@ void SC4PlopAndPaintDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
 bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaintSettings& settings,
                                                    const std::string& name) {
     if (!pCity_ || !pView3D_) {
-        spdlog::warn("Cannot start prop painting: city or view not available");
+        LOG_WARN("Cannot start prop painting: city or view not available");
         return false;
     }
 
@@ -271,12 +271,12 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
         auto* control = new PropPainterInputControl();
         propPainterControl_ = control;
         if (!propPainterControl_) {
-            spdlog::error("Failed to allocate PropPainterInputControl");
+            LOG_ERROR("Failed to allocate PropPainterInputControl");
             return false;
         }
 
         if (!propPainterControl_->Init()) {
-            spdlog::error("Failed to initialize PropPainterInputControl");
+            LOG_ERROR("Failed to initialize PropPainterInputControl");
             propPainterControl_.Reset();
             return false;
         }
@@ -292,19 +292,19 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
             pView3D_->RemoveCurrentViewInputControl(false);
         }
         propPainting_ = false;
-        spdlog::info("Stopped prop painting");
+        LOG_INFO("Stopped prop painting");
     });
 
     propPainterControl_->SetPropToPaint(propId, settings, name);
     if (!pView3D_->SetCurrentViewInputControl(
         propPainterControl_,
         cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
-        spdlog::warn("Failed to set prop painter as current view input control");
+        LOG_WARN("Failed to set prop painter as current view input control");
         return false;
     }
 
     propPainting_ = true;
-    spdlog::info("Started prop painting: 0x{:08X}, rotation {}", propId, settings.rotation);
+    LOG_INFO("Started prop painting: 0x{:08X}, rotation {}", propId, settings.rotation);
     return true;
 }
 
@@ -328,7 +328,7 @@ void SC4PlopAndPaintDirector::StopPropPainting() {
     }
 
     propPainting_ = false;
-    spdlog::info("Stopped prop painting");
+    LOG_INFO("Stopped prop painting");
 }
 
 bool SC4PlopAndPaintDirector::IsPropPainting() const {
@@ -376,7 +376,7 @@ void SC4PlopAndPaintDirector::PostCityInit_(const cIGZMessage2Standard* pStandar
             if (pWinSC4App) {
                 if (pWinSC4App->GetChildAs(
                     kGZWin_SC4View3DWin, kGZIID_cISC4View3DWin, reinterpret_cast<void**>(&pView3D_))) {
-                    spdlog::info("Acquired View3D interface");
+                    LOG_INFO("Acquired View3D interface");
                     RegisterLotPlopShortcut_();
                 }
             }
@@ -396,7 +396,7 @@ void SC4PlopAndPaintDirector::PreCityShutdown_(cIGZMessage2Standard* pStandardMs
         pView3D_ = nullptr;
     }
     UnregisterLotPlopShortcut_();
-    spdlog::info("City shutdown - released resources");
+    LOG_INFO("City shutdown - released resources");
 }
 
 void SC4PlopAndPaintDirector::ToggleLotPlopPanel_() {
@@ -408,17 +408,17 @@ bool SC4PlopAndPaintDirector::RegisterLotPlopShortcut_() {
         return true;
     }
     if (!pView3D_) {
-        spdlog::warn("Cannot register lot plop shortcut: View3D not available");
+        LOG_WARN("Cannot register lot plop shortcut: View3D not available");
         return false;
     }
     if (!pMS2_) {
-        spdlog::warn("Cannot register lot plop shortcut: message server not available");
+        LOG_WARN("Cannot register lot plop shortcut: message server not available");
         return false;
     }
 
     cIGZPersistResourceManagerPtr pRM;
     if (!pRM) {
-        spdlog::warn("Cannot register lot plop shortcut: resource manager unavailable");
+        LOG_WARN("Cannot register lot plop shortcut: resource manager unavailable");
         return false;
     }
 
@@ -426,25 +426,25 @@ bool SC4PlopAndPaintDirector::RegisterLotPlopShortcut_() {
     const cGZPersistResourceKey key(kKeyConfigType, kKeyConfigGroup, kKeyConfigInstance);
     if (!pRM->GetPrivateResource(key, kGZIID_cIGZWinKeyAcceleratorRes,
                                  acceleratorRes.AsPPVoid(), 0, nullptr)) {
-        spdlog::warn("Failed to load key config resource 0x{:08X}/0x{:08X}/0x{:08X}",
-                     kKeyConfigType, kKeyConfigGroup, kKeyConfigInstance);
+        LOG_WARN("Failed to load key config resource 0x{:08X}/0x{:08X}/0x{:08X}",
+                 kKeyConfigType, kKeyConfigGroup, kKeyConfigInstance);
         return false;
     }
 
     auto* accelerator = pView3D_->GetKeyAccelerator();
     if (!accelerator) {
-        spdlog::warn("Cannot register lot plop shortcut: key accelerator not available");
+        LOG_WARN("Cannot register lot plop shortcut: key accelerator not available");
         return false;
     }
 
     if (!acceleratorRes->RegisterResources(accelerator)) {
-        spdlog::warn("Failed to register key accelerator resources");
+        LOG_WARN("Failed to register key accelerator resources");
         return false;
     }
 
     if (!pMS2_->AddNotification(this, kToggleLotPlopWindowShortcutID)) {
-        spdlog::warn("Failed to register shortcut notification 0x{:08X}",
-                     kToggleLotPlopWindowShortcutID);
+        LOG_WARN("Failed to register shortcut notification 0x{:08X}",
+                 kToggleLotPlopWindowShortcutID);
         return false;
     }
 

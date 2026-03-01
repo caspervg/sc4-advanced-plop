@@ -10,7 +10,7 @@
 #include "Utils.hpp"
 #include "rfl/cbor/load.hpp"
 #include "rfl/cbor/save.hpp"
-#include "spdlog/spdlog.h"
+#include "utils/Logger.h"
 
 FavoritesRepository::FavoritesRepository(const PropRepository& props)
     : props_(props) {}
@@ -26,7 +26,7 @@ void FavoritesRepository::Load() {
         const auto cborPath = pluginsPath / "favorites.cbor";
 
         if (!std::filesystem::exists(cborPath)) {
-            spdlog::info("Favorites file not found, starting with empty favorites");
+            LOG_INFO("Favorites file not found, starting with empty favorites");
             return;
         }
 
@@ -53,15 +53,15 @@ void FavoritesRepository::Load() {
                 }
             }
 
-            spdlog::info("Loaded {} favorite lots, {} user families from {}",
-                         favoriteLotIds_.size(), userFamilies_.size(), cborPath.string());
+            LOG_INFO("Loaded {} favorite lots, {} user families from {}",
+                     favoriteLotIds_.size(), userFamilies_.size(), cborPath.string());
         }
         else {
-            spdlog::warn("Failed to load favorites from CBOR file: {}", result.error().what());
+            LOG_WARN("Failed to load favorites from CBOR file: {}", result.error().what());
         }
     }
     catch (const std::exception& e) {
-        spdlog::warn("Error loading favorites (will start empty): {}", e.what());
+        LOG_WARN("Error loading favorites (will start empty): {}", e.what());
     }
 }
 
@@ -95,15 +95,15 @@ void FavoritesRepository::Save() const {
         allFavorites.families = userFamilies_.empty() ? std::nullopt : std::make_optional(userFamilies_);
 
         if (const auto saveResult = rfl::cbor::save(cborPath.string(), allFavorites)) {
-            spdlog::info("Saved {} favorite lots, {} user families to {}",
-                         favoriteLotIds_.size(), userFamilies_.size(), cborPath.string());
+            LOG_INFO("Saved {} favorite lots, {} user families to {}",
+                     favoriteLotIds_.size(), userFamilies_.size(), cborPath.string());
         }
         else {
-            spdlog::error("Failed to save favorites: {}", saveResult.error().what());
+            LOG_ERROR("Failed to save favorites: {}", saveResult.error().what());
         }
     }
     catch (const std::exception& e) {
-        spdlog::error("Error saving favorites: {}", e.what());
+        LOG_ERROR("Error saving favorites: {}", e.what());
     }
 }
 
@@ -118,11 +118,11 @@ const std::unordered_set<uint32_t>& FavoritesRepository::GetFavoriteLotIds() con
 void FavoritesRepository::ToggleLotFavorite(const uint32_t lotInstanceId) {
     if (favoriteLotIds_.contains(lotInstanceId)) {
         favoriteLotIds_.erase(lotInstanceId);
-        spdlog::info("Removed lot favorite: 0x{:08X}", lotInstanceId);
+        LOG_INFO("Removed lot favorite: 0x{:08X}", lotInstanceId);
     }
     else {
         favoriteLotIds_.insert(lotInstanceId);
-        spdlog::info("Added lot favorite: 0x{:08X}", lotInstanceId);
+        LOG_INFO("Added lot favorite: 0x{:08X}", lotInstanceId);
     }
     Save();
 }
@@ -139,11 +139,11 @@ void FavoritesRepository::TogglePropFavorite(const uint32_t groupId, const uint3
     const uint64_t key = MakeGIKey(groupId, instanceId);
     if (favoritePropIds_.contains(key)) {
         favoritePropIds_.erase(key);
-        spdlog::info("Removed prop favorite: 0x{:08X}/0x{:08X}", groupId, instanceId);
+        LOG_INFO("Removed prop favorite: 0x{:08X}/0x{:08X}", groupId, instanceId);
     }
     else {
         favoritePropIds_.insert(key);
-        spdlog::info("Added prop favorite: 0x{:08X}/0x{:08X}", groupId, instanceId);
+        LOG_INFO("Added prop favorite: 0x{:08X}/0x{:08X}", groupId, instanceId);
     }
     Save();
 }
@@ -226,7 +226,7 @@ bool FavoritesRepository::AddPropToUserFamily(const uint32_t propID, const size_
         return false;
     }
     if (!props_.FindPropByInstanceId(propID)) {
-        spdlog::warn("Cannot add prop 0x{:08X} to family: prop not found", propID);
+        LOG_WARN("Cannot add prop 0x{:08X} to family: prop not found", propID);
         return false;
     }
     auto& family = userFamilies_[index];
@@ -313,7 +313,7 @@ std::filesystem::path FavoritesRepository::GetPluginsPath_() {
         return std::filesystem::path(modulePath.get()).parent_path();
     }
     catch (const wil::ResultException& e) {
-        spdlog::error("FavoritesRepository: Failed to get DLL directory: {}", e.what());
+        LOG_ERROR("FavoritesRepository: Failed to get DLL directory: {}", e.what());
         return {};
     }
 }

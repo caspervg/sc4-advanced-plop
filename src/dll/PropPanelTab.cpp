@@ -5,7 +5,7 @@
 #include "Constants.hpp"
 #include "Utils.hpp"
 #include "rfl/visit.hpp"
-#include "spdlog/spdlog.h"
+#include "utils/Logger.h"
 
 const char* PropPanelTab::GetTabName() const {
     return "Props";
@@ -60,18 +60,18 @@ ImGuiTexture PropPanelTab::LoadPropTexture_(uint64_t propKey) {
     ImGuiTexture texture;
 
     if (!imguiService_) {
-        spdlog::warn("Could not load prop thumbnail: imguiService_ is null");
+        LOG_WARN("Could not load prop thumbnail: imguiService_ is null");
         return texture;
     }
 
     const auto& propsById = props_->GetPropsById();
     if (!propsById.contains(propKey)) {
-        spdlog::warn("Could not find prop with key 0x{:016X} in props map", propKey);
+        LOG_WARN("Could not find prop with key 0x{:016X} in props map", propKey);
         return texture;
     }
     const auto& prop = propsById.at(propKey);
     if (!prop.thumbnail.has_value()) {
-        spdlog::warn("Prop with key 0x{:016X} has no thumbnail", propKey);
+        LOG_WARN("Prop with key 0x{:016X} has no thumbnail", propKey);
         return texture;
     }
 
@@ -88,8 +88,8 @@ ImGuiTexture PropPanelTab::LoadPropTexture_(uint64_t propKey) {
 
         const size_t expectedSize = static_cast<size_t>(width) * height * 4;
         if (data.size() != expectedSize) {
-            spdlog::warn("Prop icon data size mismatch for key 0x{:016X}: expected {}, got {}",
-                         propKey, expectedSize, data.size());
+            LOG_WARN("Prop icon data size mismatch for key 0x{:016X}: expected {}, got {}",
+                     propKey, expectedSize, data.size());
             return;
         }
 

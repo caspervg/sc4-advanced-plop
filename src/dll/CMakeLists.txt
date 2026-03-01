@@ -123,11 +123,16 @@ if(WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:${PROJECT_NAME}>
                 "${SC4_PLUGINS_DIR}/"
-            COMMENT "Deploying SC4PlopAndPaint.dll to Plugins folder"
+            COMMAND ${CMAKE_COMMAND}
+                -DSRC=${CMAKE_SOURCE_DIR}/dist/SC4PlopAndPaint.ini
+                -DDST=${SC4_PLUGINS_DIR}/SC4PlopAndPaint.ini
+                -P ${IMGUI_SERVICE_ROOT}/cmake/CopyIfNotExists.cmake
+            COMMENT "Deploying SC4PlopAndPaint.dll to Plugins folder (INI only if missing)"
         )
 
         message(STATUS "Deployment targets configured:")
         message(STATUS "  - SC4PlopAndPaint.dll -> ${SC4_PLUGINS_DIR}/")
+        message(STATUS "  - SC4PlopAndPaint.ini -> ${SC4_PLUGINS_DIR}/ (if missing)")
     else()
         message(WARNING "SC4 installation not found. Manual deployment required.")
     endif()

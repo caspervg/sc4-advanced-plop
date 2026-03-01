@@ -6,7 +6,7 @@
 
 #include "Utils.hpp"
 #include "rfl/cbor/load.hpp"
-#include "spdlog/spdlog.h"
+#include "utils/Logger.h"
 
 void LotRepository::Load() {
     try {
@@ -14,7 +14,7 @@ void LotRepository::Load() {
         const auto cborPath = pluginsPath / "lot_configs.cbor";
 
         if (!std::filesystem::exists(cborPath)) {
-            spdlog::warn("Lot config CBOR file not found: {}", cborPath.string());
+            LOG_WARN("Lot config CBOR file not found: {}", cborPath.string());
             return;
         }
 
@@ -33,24 +33,24 @@ void LotRepository::Load() {
                     const uint64_t key = MakeGIKey(lot.groupId.value(), lot.instanceId.value());
                     if (!lotKeys.insert(key).second) {
                         ++duplicateLots;
-                        spdlog::warn("Duplicate lot in CBOR: group=0x{:08X}, instance=0x{:08X}",
-                                     lot.groupId.value(), lot.instanceId.value());
+                        LOG_WARN("Duplicate lot in CBOR: group=0x{:08X}, instance=0x{:08X}",
+                                 lot.groupId.value(), lot.instanceId.value());
                     }
                     lotsById_.emplace(key, lot);
                 }
             }
 
-            spdlog::info("Loaded {} buildings / {} lots from {}", buildings_.size(), lotCount, cborPath.string());
+            LOG_INFO("Loaded {} buildings / {} lots from {}", buildings_.size(), lotCount, cborPath.string());
             if (duplicateLots > 0) {
-                spdlog::warn("Detected {} duplicate lot IDs in CBOR", duplicateLots);
+                LOG_WARN("Detected {} duplicate lot IDs in CBOR", duplicateLots);
             }
         }
         else {
-            spdlog::error("Failed to load lots from CBOR file: {}", result.error().what());
+            LOG_ERROR("Failed to load lots from CBOR file: {}", result.error().what());
         }
     }
     catch (const std::exception& e) {
-        spdlog::error("Error loading lots: {}", e.what());
+        LOG_ERROR("Error loading lots: {}", e.what());
     }
 }
 
@@ -60,7 +60,7 @@ std::filesystem::path LotRepository::GetPluginsPath_() {
         return std::filesystem::path(modulePath.get()).parent_path();
     }
     catch (const wil::ResultException& e) {
-        spdlog::error("LotRepository: Failed to get DLL directory: {}", e.what());
+        LOG_ERROR("LotRepository: Failed to get DLL directory: {}", e.what());
         return {};
     }
 }

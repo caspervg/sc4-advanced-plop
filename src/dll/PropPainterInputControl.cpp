@@ -11,7 +11,7 @@
 #include "WeightedPropPicker.hpp"
 #include "cISC4Occupant.h"
 #include "cISTETerrain.h"
-#include "spdlog/spdlog.h"
+#include "utils/Logger.h"
 
 namespace {
     constexpr auto kPropPainterControlID = 0x8A3F9D2B;
@@ -47,7 +47,7 @@ bool PropPainterInputControl::Init() {
     }
 
     TransitionTo_(propIDToPaint_ != 0 ? ControlState::ReadyWithTarget : ControlState::ReadyNoTarget, "Init");
-    spdlog::info("PropPainterInputControl initialized");
+    LOG_INFO("PropPainterInputControl initialized");
     return true;
 }
 
@@ -56,7 +56,7 @@ bool PropPainterInputControl::Shutdown() {
         return true;
     }
 
-    spdlog::info("PropPainterInputControl shutting down");
+    LOG_INFO("PropPainterInputControl shutting down");
     CancelAllPlacements();
     TransitionTo_(ControlState::Uninitialized, "Shutdown");
     cSC4BaseViewInputControl::Shutdown();
@@ -90,12 +90,12 @@ bool PropPainterInputControl::OnKeyDown(const int32_t vkCode, const uint32_t mod
 void PropPainterInputControl::Activate() {
     cSC4BaseViewInputControl::Activate();
     if (!Init()) {
-        spdlog::warn("PropPainterInputControl: Init failed during Activate");
+        LOG_WARN("PropPainterInputControl: Init failed during Activate");
         return;
     }
 
     TransitionTo_(propIDToPaint_ != 0 ? ActiveStateForMode_(settings_.mode) : ControlState::ActiveNoTarget, "Activate");
-    spdlog::info("PropPainterInputControl activated");
+    LOG_INFO("PropPainterInputControl activated");
 }
 
 void PropPainterInputControl::Deactivate() {
@@ -107,7 +107,7 @@ void PropPainterInputControl::Deactivate() {
     }
 
     cSC4BaseViewInputControl::Deactivate();
-    spdlog::info("PropPainterInputControl deactivated");
+    LOG_INFO("PropPainterInputControl deactivated");
 }
 
 void PropPainterInputControl::SetPropToPaint(const uint32_t propID, const PropPaintSettings& settings,
@@ -119,7 +119,7 @@ void PropPainterInputControl::SetPropToPaint(const uint32_t propID, const PropPa
     if (settings_.randomSeed == 0) {
         settings_.randomSeed = static_cast<uint32_t>(GetTickCount64() ^ static_cast<uint64_t>(propIDToPaint_));
     }
-    spdlog::info("Setting prop to paint: {} (0x{:08X}), rotation: {}", name, propID, settings.rotation);
+    LOG_INFO("Setting prop to paint: {} (0x{:08X}), rotation: {}", name, propID, settings.rotation);
 
     if (targetChanged) {
         ClearCollectedPoints_();
@@ -239,8 +239,8 @@ void PropPainterInputControl::TransitionTo_(const ControlState newState, const c
 
     const auto oldState = state_;
     state_ = newState;
-    spdlog::debug("PropPainterInputControl state transition: {} -> {} ({})",
-                  StateToString_(oldState), StateToString_(newState), reason);
+    LOG_INFO("PropPainterInputControl state transition: {} -> {} ({})",
+              StateToString_(oldState), StateToString_(newState), reason);
     SyncPreviewForState_();
 }
 
@@ -297,7 +297,7 @@ bool PropPainterInputControl::HandleActiveMouseMove_(const int32_t x, const int3
 bool PropPainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const uint32_t modifiers) {
     if (vkCode == VK_ESCAPE) {
         CancelAllPlacements();
-        spdlog::info("PropPainterInputControl: ESC pressed, stopping paint mode");
+        LOG_INFO("PropPainterInputControl: ESC pressed, stopping paint mode");
         cancelPending_ = true;
         return true;
     }
@@ -346,7 +346,7 @@ bool PropPainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const u
 
     if (vkCode == 'P') {
         previewSettings_.showPreview = !previewSettings_.showPreview;
-        spdlog::info("Toggled preview visibility: {}", previewSettings_.showPreview);
+        LOG_INFO("Toggled preview visibility: {}", previewSettings_.showPreview);
         SyncPreviewForState_();
         return true;
     }
@@ -526,7 +526,7 @@ void PropPainterInputControl::ExecuteLinePlacement_() {
         }
     }
 
-    spdlog::info("Line paint executed: placed {} / {} props", placedCount, placements.size());
+    LOG_INFO("Line paint executed: placed {} / {} props", placedCount, placements.size());
     ClearCollectedPoints_();
 }
 
@@ -565,18 +565,18 @@ void PropPainterInputControl::ExecutePolygonPlacement_() {
         }
     }
 
-    spdlog::info("Polygon paint executed: placed {} / {} props", placedCount, placements.size());
+    LOG_INFO("Polygon paint executed: placed {} / {} props", placedCount, placements.size());
     ClearCollectedPoints_();
 }
 
 void PropPainterInputControl::UndoLastPlacement() {
     if (placedProps_.empty()) {
-        spdlog::debug("No props to undo");
+        LOG_DEBUG("No props to undo");
         return;
     }
 
     if (!propManager_) {
-        spdlog::warn("No prop manager available during undo; clearing local placed prop history");
+        LOG_WARN("No prop manager available during undo; clearing local placed prop history");
         placedProps_.clear();
         return;
     }
@@ -584,10 +584,10 @@ void PropPainterInputControl::UndoLastPlacement() {
     const auto& lastProp = placedProps_.back();
 
     if (propManager_->RemovePropA(lastProp)) {
-        spdlog::info("Removed last placed prop ({} remaining)", placedProps_.size() - 1);
+        LOG_INFO("Removed last placed prop ({} remaining)", placedProps_.size() - 1);
     }
     else {
-        spdlog::warn("Failed to remove last placed prop");
+        LOG_WARN("Failed to remove last placed prop");
     }
 
     placedProps_.pop_back();
@@ -596,18 +596,18 @@ void PropPainterInputControl::UndoLastPlacement() {
 void PropPainterInputControl::CancelAllPlacements() {
     if (!placedProps_.empty()) {
         if (!propManager_) {
-            spdlog::warn("No prop manager available during cancel; clearing local placed prop history");
+            LOG_WARN("No prop manager available during cancel; clearing local placed prop history");
             placedProps_.clear();
         }
         else {
-            spdlog::info("Canceling {} placed props", placedProps_.size());
+            LOG_INFO("Canceling {} placed props", placedProps_.size());
 
             for (auto& prop : placedProps_) {
                 if (propManager_->RemovePropA(prop)) {
-                    spdlog::debug("Removed placed prop");
+                    LOG_DEBUG("Removed placed prop");
                 }
                 else {
-                    spdlog::warn("Failed to remove placed prop");
+                    LOG_WARN("Failed to remove placed prop");
                 }
             }
 
@@ -619,7 +619,7 @@ void PropPainterInputControl::CancelAllPlacements() {
 }
 
 void PropPainterInputControl::CommitPlacements() {
-    spdlog::info("Committing {} placed props", placedProps_.size());
+    LOG_INFO("Committing {} placed props", placedProps_.size());
     for (const auto& prop : placedProps_) {
         prop->SetHighlight(0x0, true);
     }
@@ -628,13 +628,13 @@ void PropPainterInputControl::CommitPlacements() {
 
 bool PropPainterInputControl::PlacePropAt_(const int32_t screenX, const int32_t screenZ) {
     if (!view3D) {
-        spdlog::warn("PropPainterInputControl: View3D not available");
+        LOG_WARN("PropPainterInputControl: View3D not available");
         return false;
     }
 
     float worldCoords[3] = {0.0f, 0.0f, 0.0f};
     if (!view3D->PickTerrain(screenX, screenZ, worldCoords, false)) {
-        spdlog::debug("Failed to pick terrain at screen ({}, {})", screenX, screenZ);
+        LOG_DEBUG("Failed to pick terrain at screen ({}, {})", screenX, screenZ);
         return false;
     }
 
@@ -645,55 +645,55 @@ bool PropPainterInputControl::PlacePropAt_(const int32_t screenX, const int32_t 
 bool PropPainterInputControl::PlacePropAtWorld_(const cS3DVector3& position, const int32_t rotation,
                                                 const uint32_t propID) {
     if (!propManager_) {
-        spdlog::warn("PropPainterInputControl: PropManager not available");
+        LOG_WARN("PropPainterInputControl: PropManager not available");
         return false;
     }
 
     const uint32_t propToCreate = propID != 0 ? propID : propIDToPaint_;
     if (propToCreate == 0) {
-        spdlog::warn("PlacePropAtWorld_: no prop ID available");
+        LOG_WARN("PlacePropAtWorld_: no prop ID available");
         return false;
     }
 
     cISC4PropOccupant* prop = nullptr;
     if (!propManager_->CreateProp(propToCreate, prop)) {
-        spdlog::warn("Failed to create prop 0x{:08X}", propToCreate);
+        LOG_WARN("Failed to create prop 0x{:08X}", propToCreate);
         return false;
     }
 
     cRZAutoRefCount propRef(prop);
     cISC4Occupant* occupant = prop->AsOccupant();
     if (!occupant) {
-        spdlog::warn("Failed to get occupant interface from created prop");
+        LOG_WARN("Failed to get occupant interface from created prop");
         return false;
     }
 
     cS3DVector3 placePos = position;
     if (!occupant->SetPosition(&placePos)) {
-        spdlog::warn("Failed to set prop position");
+        LOG_WARN("Failed to set prop position");
         return false;
     }
 
     if (!prop->SetOrientation(rotation & 3)) {
-        spdlog::warn("Failed to set prop orientation");
+        LOG_WARN("Failed to set prop orientation");
         return false;
     }
 
     if (!propManager_->AddCityProp(occupant)) {
-        spdlog::warn("Failed to add prop to city - validation failed (?)");
+        LOG_WARN("Failed to add prop to city - validation failed (?)");
         return false;
     }
 
     if (!occupant->SetHighlight(0x9, true)) {
-        spdlog::warn("Failed to set prop highlight");
+        LOG_WARN("Failed to set prop highlight");
         return false;
     }
 
     occupant->AddRef();
     placedProps_.emplace_back(occupant);
 
-    spdlog::info("Placed prop 0x{:08X} at ({:.2f}, {:.2f}, {:.2f}), rotation: {}",
-                 propToCreate, placePos.fX, placePos.fY, placePos.fZ, rotation & 3);
+    LOG_INFO("Placed prop 0x{:08X} at ({:.2f}, {:.2f}, {:.2f}), rotation: {}",
+             propToCreate, placePos.fX, placePos.fY, placePos.fZ, rotation & 3);
     return true;
 }
 
