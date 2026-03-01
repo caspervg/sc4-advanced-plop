@@ -14,8 +14,9 @@ struct PropPaintSettings;
 
 class PropPaintOverlay {
 public:
-    static constexpr uint32_t kLayerShape = 0;
-    static constexpr uint32_t kLayerMarkers = 1;
+    static constexpr uint32_t kLayerGrid = 0;
+    static constexpr uint32_t kLayerShape = 1;
+    static constexpr uint32_t kLayerMarkers = 2;
 
     struct PreviewPlacement {
         PlannedProp placement{};
@@ -50,7 +51,7 @@ public:
                              const PropPaintSettings& settings,
                              const std::vector<PreviewPlacement>& plannedPlacements);
 
-    void Draw(IDirect3DDevice7* device);
+    void Draw(IDirect3DDevice7* device, bool drawGrid = true);
 
 private:
     struct OverlayVertex {
@@ -90,8 +91,8 @@ private:
     void EmitGrid_(const cS3DVector3& center, const PropPaintSettings& settings);
 
 private:
-    static constexpr DWORD kGridMajorColor = 0x30FFFFFF;
-    static constexpr DWORD kGridMinorColor = 0x18B0E0FF;
+    static constexpr DWORD kGridMajorColor = 0x60FFFFFF;
+    static constexpr DWORD kGridMinorColor = 0x38B0E0FF;
     static constexpr DWORD kLineColor = 0xC0FFFFFF;
     static constexpr DWORD kPolygonFillColor = 0x4000FF00;
     static constexpr DWORD kMarkerColor = 0xF0FFD700;
@@ -103,6 +104,6 @@ private:
     static constexpr float kMarkerSize = 1.0f;
     static constexpr float kHeightOffset = 0.18f;
 
-    std::array<Layer, 2> layers_{};
+    std::array<Layer, 3> layers_{};
     SavedRenderState savedState_{};
 };

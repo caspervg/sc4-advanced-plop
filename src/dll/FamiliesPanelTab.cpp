@@ -1,11 +1,58 @@
 #include "FamiliesPanelTab.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
+#include <optional>
 
 #include "Utils.hpp"
 #include "rfl/visit.hpp"
+
+namespace {
+    std::string ToUpperCopy(const std::string& value) {
+        std::string normalized = value;
+        std::ranges::transform(normalized, normalized.begin(), [](const unsigned char c) {
+            return static_cast<char>(std::toupper(c));
+        });
+        return normalized;
+    }
+
+    bool ContainsCaseInsensitive(const std::string& text, const std::string& needle) {
+        if (needle.empty()) {
+            return true;
+        }
+
+        return ToUpperCopy(text).contains(ToUpperCopy(needle));
+    }
+
+    std::string FormatFamilyId(const std::optional<uint32_t> familyId) {
+        if (!familyId.has_value()) {
+            return "-";
+        }
+
+        char buffer[16];
+        std::snprintf(buffer, sizeof(buffer), "0x%08X", familyId.value());
+        return buffer;
+    }
+
+    bool MatchesIidFilter(const std::optional<uint32_t> familyId, const std::string& filter) {
+        if (filter.empty()) {
+            return true;
+        }
+        if (!familyId.has_value()) {
+            return false;
+        }
+
+        const std::string formatted = FormatFamilyId(familyId);
+        std::string compact = formatted;
+        compact.erase(std::remove(compact.begin(), compact.end(), 'x'), compact.end());
+        compact.erase(std::remove(compact.begin(), compact.end(), 'X'), compact.end());
+
+        const std::string normalizedFilter = ToUpperCopy(filter);
+        return ToUpperCopy(formatted).contains(normalizedFilter) || ToUpperCopy(compact).contains(normalizedFilter);
+    }
+}
 
 const char* FamiliesPanelTab::GetTabName() const {
     return "Families";
@@ -18,6 +65,7 @@ void FamiliesPanelTab::OnRender() {
     }
 
     const auto& autoFamilies = props_->GetAutoFamilies();
+    const auto& autoFamilyIds = props_->GetAutoFamilyIds();
     const auto& userFamilies = favorites_->GetUserFamilies();
     const size_t autoCount = autoFamilies.size();
     const size_t totalCount = autoCount + userFamilies.size();
@@ -40,63 +88,157 @@ void FamiliesPanelTab::OnRender() {
         selectedFamilyIndex_ = totalCount - 1;
     }
 
-    ImGui::TextDisabled("Built-in: %zu   Own: %zu", autoCount, userFamilies.size());
-    const PropFamily* selectedFamily = GetSelectedFamily_();
-    const bool isAuto = IsSelectedAutoFamily_();
-
-    if (ImGui::BeginTable("FamilySelectors", 2)) {
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted("Built-in Families");
-        if (autoFamilies.empty()) {
-            ImGui::TextDisabled("No built-in families loaded.");
-        }
-        else {
-            const std::string autoPreview = isAuto && selectedFamily ? selectedFamily->name : "(none)";
-            if (ImGui::BeginCombo("##AutoFamilies", autoPreview.c_str())) {
-                for (size_t i = 0; i < autoCount; ++i) {
-                    const bool selected = i == selectedFamilyIndex_;
-                    if (ImGui::Selectable(autoFamilies[i].name.c_str(), selected)) {
-                        selectedFamilyIndex_ = i;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted("Own Families");
-        if (userFamilies.empty()) {
-            ImGui::TextDisabled("No own families yet.");
-        }
-        else {
-            const std::string userPreview = !isAuto && selectedFamily ? selectedFamily->name : "(none)";
-            if (ImGui::BeginCombo("##UserFamilies", userPreview.c_str())) {
-                for (size_t i = 0; i < userFamilies.size(); ++i) {
-                    const bool selected = (autoCount + i) == selectedFamilyIndex_;
-                    if (ImGui::Selectable(userFamilies[i].name.c_str(), selected)) {
-                        selectedFamilyIndex_ = autoCount + i;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-        if (ImGui::Button("+")) {
-            newFamilyPopupOpen_ = true;
-            std::strncpy(newFamilyName_, "New family", sizeof(newFamilyName_) - 1);
-            newFamilyName_[sizeof(newFamilyName_) - 1] = '\0';
-        }
-
-        if (!IsSelectedAutoFamily_()) {
-            ImGui::SameLine();
-            if (ImGui::Button("x")) {
-                deleteFamilyPopupOpen_ = true;
-            }
-        }
-
-        ImGui::EndTable();
+    static char nameFilterBuf[256] = {};
+    if (nameFilter_ != nameFilterBuf) {
+        std::strncpy(nameFilterBuf, nameFilter_.c_str(), sizeof(nameFilterBuf) - 1);
+        nameFilterBuf[sizeof(nameFilterBuf) - 1] = '\0';
     }
 
-    selectedFamily = GetSelectedFamily_();
+    static char iidFilterBuf[64] = {};
+    if (iidFilter_ != iidFilterBuf) {
+        std::strncpy(iidFilterBuf, iidFilter_.c_str(), sizeof(iidFilterBuf) - 1);
+        iidFilterBuf[sizeof(iidFilterBuf) - 1] = '\0';
+    }
+
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::InputTextWithHint("##SearchFamiliesByName", "Search family name...", nameFilterBuf, sizeof(nameFilterBuf))) {
+        nameFilter_ = nameFilterBuf;
+    }
+
+    ImGui::SetNextItemWidth(180.0f);
+    if (ImGui::InputTextWithHint("##SearchFamiliesByIid", "Filter IID (0x...)", iidFilterBuf, sizeof(iidFilterBuf))) {
+        iidFilter_ = iidFilterBuf;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear filters")) {
+        nameFilter_.clear();
+        iidFilter_.clear();
+        nameFilterBuf[0] = '\0';
+        iidFilterBuf[0] = '\0';
+    }
+
+    ImGui::Separator();
+
+    struct FamilyListRow {
+        size_t combinedIndex = 0;
+        bool isAuto = false;
+        const PropFamily* family = nullptr;
+        std::optional<uint32_t> familyId{};
+    };
+
+    std::vector<FamilyListRow> filteredFamilies;
+    filteredFamilies.reserve(totalCount);
+    for (size_t i = 0; i < totalCount; ++i) {
+        const bool rowIsAuto = i < autoCount;
+        const PropFamily* family = rowIsAuto ? &autoFamilies[i] : &userFamilies[i - autoCount];
+        const std::optional<uint32_t> familyId = rowIsAuto && i < autoFamilyIds.size()
+            ? std::optional<uint32_t>(autoFamilyIds[i])
+            : std::nullopt;
+
+        if (!ContainsCaseInsensitive(family->name, nameFilter_)) {
+            continue;
+        }
+        if (!MatchesIidFilter(familyId, iidFilter_)) {
+            continue;
+        }
+
+        filteredFamilies.push_back(FamilyListRow{
+            .combinedIndex = i,
+            .isAuto = rowIsAuto,
+            .family = family,
+            .familyId = familyId
+        });
+    }
+
+    if (!filteredFamilies.empty() &&
+        std::ranges::none_of(filteredFamilies, [this](const FamilyListRow& row) {
+            return row.combinedIndex == selectedFamilyIndex_;
+        })) {
+        selectedFamilyIndex_ = filteredFamilies.front().combinedIndex;
+    }
+
+    ImGui::Text("Showing %zu of %zu families", filteredFamilies.size(), totalCount);
+    if (director_->IsPropPainting()) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Stop painting")) {
+            director_->StopPropPainting();
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::SmallButton("New family")) {
+        newFamilyPopupOpen_ = true;
+        std::strncpy(newFamilyName_, "New family", sizeof(newFamilyName_) - 1);
+        newFamilyName_[sizeof(newFamilyName_) - 1] = '\0';
+    }
+
+    ImGui::Separator();
+
+    constexpr ImGuiTableFlags familyTableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody |
+        ImGuiTableFlags_ScrollY;
+
+    if (ImGui::BeginChild("FamilyTableRegion", ImVec2(0, 180), false)) {
+        if (ImGui::BeginTable("FamiliesTable", 5, familyTableFlags, ImVec2(0, 0))) {
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("IID", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+            ImGui::TableSetupColumn("Props", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+            ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+            ImGui::TableHeadersRow();
+
+            for (const auto& row : filteredFamilies) {
+                const bool selected = row.combinedIndex == selectedFamilyIndex_;
+
+                ImGui::PushID(static_cast<int>(row.combinedIndex));
+                ImGui::TableNextRow();
+
+                ImGui::TableNextColumn();
+                ImGui::Selectable("##familyrow", selected,
+                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap |
+                                      ImGuiSelectableFlags_AllowDoubleClick);
+                if (ImGui::IsItemClicked()) {
+                    selectedFamilyIndex_ = row.combinedIndex;
+                    if (ImGui::IsMouseDoubleClicked(0)) {
+                        QueuePaintForSelectedFamily_();
+                    }
+                }
+                ImGui::SameLine();
+                ImGui::TextUnformatted(row.isAuto ? "Built-in" : "Own");
+
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(row.family->name.c_str());
+
+                ImGui::TableNextColumn();
+                const std::string familyIdLabel = FormatFamilyId(row.familyId);
+                ImGui::TextUnformatted(familyIdLabel.c_str());
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%zu", row.family->entries.size());
+
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("Paint")) {
+                    selectedFamilyIndex_ = row.combinedIndex;
+                    QueuePaintForSelectedFamily_();
+                }
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+    }
+    ImGui::EndChild();
+
+    if (filteredFamilies.empty()) {
+        ImGui::Separator();
+        ImGui::TextDisabled("No families match the current filters.");
+        RenderNewFamilyPopup_();
+        RenderPaintOptionsPopup_();
+        return;
+    }
+
+    const PropFamily* selectedFamily = GetSelectedFamily_();
     const bool selectedIsAuto = IsSelectedAutoFamily_();
     const size_t userIndex = selectedIsAuto ? 0 : selectedFamilyIndex_ - autoCount;
 
@@ -108,9 +250,18 @@ void FamiliesPanelTab::OnRender() {
     if (selectedIsAuto) {
         ImGui::TextDisabled("Read-only built-in family");
     }
+    else if (ImGui::SmallButton("Delete family")) {
+        deleteFamilyPopupOpen_ = true;
+    }
     ImGui::TextUnformatted(selectedFamily->name.c_str());
 
     ImGui::Separator();
+    if (selectedIsAuto && selectedFamilyIndex_ < autoFamilyIds.size()) {
+        ImGui::Text("IID: 0x%08X", autoFamilyIds[selectedFamilyIndex_]);
+    }
+    else if (!selectedIsAuto) {
+        ImGui::TextDisabled("IID: custom family");
+    }
     ImGui::Text("%zu props in family", selectedFamily->entries.size());
 
     if (selectedFamily->entries.empty()) {
@@ -204,6 +355,7 @@ void FamiliesPanelTab::OnRender() {
     // --- Density variation (user families only) ---
     if (!selectedIsAuto) {
         ImGui::Separator();
+        ImGui::TextUnformatted("Family Settings");
         auto& mutableFamily = favorites_->GetUserFamilies()[userIndex];
         if (ImGui::SliderFloat("Density variation", &mutableFamily.densityVariation, 0.0f, 1.0f, "%.2f")) {
             favorites_->Save();
@@ -213,40 +365,13 @@ void FamiliesPanelTab::OnRender() {
         }
     }
 
-    // --- Paint defaults and paint buttons ---
+    // --- Paint button ---
     ImGui::Separator();
-    ImGui::TextUnformatted("Paint Defaults");
-    ImGui::TextUnformatted("Rotation");
-    int rotation = familyPaintDefaults_.rotation;
-    ImGui::RadioButton("0 deg", &rotation, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("90 deg", &rotation, 1);
-    ImGui::SameLine();
-    ImGui::RadioButton("180 deg", &rotation, 2);
-    ImGui::SameLine();
-    ImGui::RadioButton("270 deg", &rotation, 3);
-    familyPaintDefaults_.rotation = rotation;
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Paint along line");
-    ImGui::SliderFloat("Spacing (m)", &familyPaintDefaults_.spacingMeters, 0.5f, 50.0f, "%.1f");
-    ImGui::Checkbox("Align to path direction", &familyPaintDefaults_.alignToPath);
-    ImGui::SliderFloat("Lateral jitter (m)", &familyPaintDefaults_.randomOffset, 0.0f, 5.0f, "%.1f");
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Paint inside polygon");
-    ImGui::SliderFloat("Density (/100 m^2)", &familyPaintDefaults_.densityPer100Sqm, 0.1f, 20.0f, "%.1f");
-    ImGui::Checkbox("Random rotation", &familyPaintDefaults_.randomRotation);
-
     if (selectedFamily->entries.empty()) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("Start line")) {
-        StartPaintingWithSelectedFamily_(PropPaintMode::Line);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Start polygon")) {
-        StartPaintingWithSelectedFamily_(PropPaintMode::Polygon);
+    if (ImGui::Button("Paint family")) {
+        QueuePaintForSelectedFamily_();
     }
     if (selectedFamily->entries.empty()) {
         ImGui::EndDisabled();
@@ -256,6 +381,7 @@ void FamiliesPanelTab::OnRender() {
     if (!selectedIsAuto) {
         RenderDeleteFamilyPopup_(userIndex);
     }
+    RenderPaintOptionsPopup_();
 }
 
 void FamiliesPanelTab::OnDeviceReset(const uint32_t deviceGeneration) {
@@ -366,9 +492,102 @@ void FamiliesPanelTab::RenderDeleteFamilyPopup_(const size_t userFamilyIndex) {
     }
 }
 
-bool FamiliesPanelTab::StartPaintingWithSelectedFamily_(const PropPaintMode mode) {
+void FamiliesPanelTab::QueuePaintForSelectedFamily_() {
     const PropFamily* family = GetSelectedFamily_();
     if (!family || family->entries.empty()) {
+        return;
+    }
+
+    pendingPaint_.fallbackPropId = family->entries.front().propID.value();
+    pendingPaint_.familyName = family->name;
+    pendingPaint_.settings = familyPaintDefaults_;
+    pendingPaint_.settings.activePalette = family->entries;
+    pendingPaint_.settings.densityVariation = family->densityVariation;
+    pendingPaint_.settings.randomSeed = 0;
+    pendingPaint_.open = true;
+}
+
+void FamiliesPanelTab::RenderPaintOptionsPopup_() {
+    if (pendingPaint_.open) {
+        ImGui::OpenPopup("Family Paint Options");
+        pendingPaint_.open = false;
+    }
+
+    if (ImGui::BeginPopupModal("Family Paint Options", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Family: %s", pendingPaint_.familyName.c_str());
+        ImGui::Separator();
+
+        ImGui::TextUnformatted("Mode");
+        int mode = static_cast<int>(pendingPaint_.settings.mode);
+        ImGui::RadioButton("Direct paint", &mode, static_cast<int>(PropPaintMode::Direct));
+        ImGui::RadioButton("Paint along line", &mode, static_cast<int>(PropPaintMode::Line));
+        ImGui::RadioButton("Paint inside polygon", &mode, static_cast<int>(PropPaintMode::Polygon));
+        pendingPaint_.settings.mode = static_cast<PropPaintMode>(mode);
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Rotation");
+        int rotation = pendingPaint_.settings.rotation;
+        ImGui::RadioButton("0 deg", &rotation, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("90 deg", &rotation, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("180 deg", &rotation, 2);
+        ImGui::SameLine();
+        ImGui::RadioButton("270 deg", &rotation, 3);
+        pendingPaint_.settings.rotation = rotation;
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Grid");
+        ImGui::Checkbox("Show grid overlay", &pendingPaint_.settings.showGrid);
+        ImGui::Checkbox("Snap points to grid", &pendingPaint_.settings.snapPointsToGrid);
+        if (pendingPaint_.settings.snapPointsToGrid) {
+            ImGui::Checkbox("Also snap placements to grid", &pendingPaint_.settings.snapPlacementsToGrid);
+        }
+        else {
+            pendingPaint_.settings.snapPlacementsToGrid = false;
+            ImGui::BeginDisabled();
+            bool snapPlacements = false;
+            ImGui::Checkbox("Also snap placements to grid", &snapPlacements);
+            ImGui::EndDisabled();
+        }
+        ImGui::SliderFloat("Grid step (m)", &pendingPaint_.settings.gridStepMeters, 1.0f, 16.0f, "%.1f");
+
+        if (pendingPaint_.settings.mode == PropPaintMode::Line) {
+            ImGui::Separator();
+            ImGui::SliderFloat("Spacing (m)", &pendingPaint_.settings.spacingMeters, 0.5f, 50.0f, "%.1f");
+            ImGui::Checkbox("Align to path direction", &pendingPaint_.settings.alignToPath);
+            ImGui::SliderFloat("Lateral jitter (m)", &pendingPaint_.settings.randomOffset, 0.0f, 5.0f, "%.1f");
+            ImGui::TextWrapped("Click to add line points. Enter places props. Backspace removes the last point.");
+        }
+        else if (pendingPaint_.settings.mode == PropPaintMode::Polygon) {
+            ImGui::Separator();
+            ImGui::SliderFloat("Density (/100 m^2)", &pendingPaint_.settings.densityPer100Sqm, 0.1f, 20.0f, "%.1f");
+            ImGui::Checkbox("Random rotation", &pendingPaint_.settings.randomRotation);
+            ImGui::TextWrapped("Click to add polygon vertices. Enter fills with props. Backspace removes the last vertex.");
+        }
+        else {
+            ImGui::TextWrapped("Click to place props directly. Enter commits placed props.");
+        }
+
+        if (ImGui::Button("Start")) {
+            StartPaintingWithSelectedFamily_();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            familyPaintDefaults_ = pendingPaint_.settings;
+            familyPaintDefaults_.activePalette.clear();
+            familyPaintDefaults_.densityVariation = 0.0f;
+            familyPaintDefaults_.randomSeed = 0;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+bool FamiliesPanelTab::StartPaintingWithSelectedFamily_() {
+    if (pendingPaint_.fallbackPropId == 0 || pendingPaint_.settings.activePalette.empty()) {
         return false;
     }
 
@@ -376,18 +595,18 @@ bool FamiliesPanelTab::StartPaintingWithSelectedFamily_(const PropPaintMode mode
         director_->StopPropPainting();
     }
 
-    PropPaintSettings settings = familyPaintDefaults_;
-    settings.mode = mode;
-    settings.activePalette = family->entries;
-    settings.densityVariation = family->densityVariation;
-
+    PropPaintSettings settings = pendingPaint_.settings;
     if (settings.randomSeed == 0) {
         settings.randomSeed = static_cast<uint32_t>(
             std::chrono::high_resolution_clock::now().time_since_epoch().count());
     }
 
-    const uint32_t fallbackPropID = family->entries.front().propID.value();
-    return director_->StartPropPainting(fallbackPropID, settings, family->name);
+    familyPaintDefaults_ = pendingPaint_.settings;
+    familyPaintDefaults_.activePalette.clear();
+    familyPaintDefaults_.densityVariation = 0.0f;
+    familyPaintDefaults_.randomSeed = 0;
+
+    return director_->StartPropPainting(pendingPaint_.fallbackPropId, settings, pendingPaint_.familyName);
 }
 
 std::string FamiliesPanelTab::PropDisplayName_(const Prop& prop) {

@@ -23,6 +23,7 @@ void PropRepository::Load() {
         propFamilyNames_.clear();
         propFamilyInfos_.clear();
         autoFamilies_.clear();
+        autoFamilyIds_.clear();
 
         if (auto result = rfl::cbor::load<PropsCache>(cborPath.string())) {
             props_ = std::move(result->props);
@@ -65,7 +66,9 @@ void PropRepository::RebuildIndexes_() {
 
 void PropRepository::BuildAutoFamilies_() {
     autoFamilies_.clear();
+    autoFamilyIds_.clear();
     autoFamilies_.reserve(propFamilyInfos_.size());
+    autoFamilyIds_.reserve(propFamilyInfos_.size());
 
     for (const auto& familyInfo : propFamilyInfos_) {
         const uint32_t familyId = familyInfo.familyId.value();
@@ -89,6 +92,7 @@ void PropRepository::BuildAutoFamilies_() {
 
         if (!family.entries.empty()) {
             autoFamilies_.push_back(std::move(family));
+            autoFamilyIds_.push_back(familyId);
         }
     }
 }

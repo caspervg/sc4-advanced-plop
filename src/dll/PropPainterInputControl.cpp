@@ -187,7 +187,9 @@ void PropPainterInputControl::DrawOverlay(IDirect3DDevice7* device) {
     if (state_ == ControlState::ActiveDirect ||
         state_ == ControlState::ActiveLine ||
         state_ == ControlState::ActivePolygon) {
-        overlay_.Draw(device);
+        const bool hideGridWhileClicking =
+            state_ == ControlState::ActiveDirect && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        overlay_.Draw(device, !hideGridWhileClicking);
     }
 }
 
@@ -373,7 +375,7 @@ bool PropPainterInputControl::UpdateCursorWorldFromScreen_(const int32_t screenX
     }
 
     currentCursorWorld_ = cS3DVector3(worldCoords[0], worldCoords[1], worldCoords[2]);
-    if (settings_.snapToGrid) {
+    if (settings_.snapPointsToGrid) {
         currentCursorWorld_ = SnapWorldToGrid_(currentCursorWorld_);
     }
     cursorValid_ = true;
@@ -393,7 +395,7 @@ cS3DVector3 PropPainterInputControl::SnapWorldToGrid_(const cS3DVector3& positio
 }
 
 void PropPainterInputControl::SnapPlacementToGrid_(PlannedProp& placement) const {
-    if (!settings_.snapToGrid) {
+    if (!settings_.snapPlacementsToGrid) {
         return;
     }
 
@@ -673,7 +675,7 @@ bool PropPainterInputControl::PlacePropAt_(const int32_t screenX, const int32_t 
     }
 
     cS3DVector3 targetPosition(worldCoords[0], worldCoords[1], worldCoords[2]);
-    if (settings_.snapToGrid) {
+    if (settings_.snapPointsToGrid) {
         targetPosition = SnapWorldToGrid_(targetPosition);
     }
 

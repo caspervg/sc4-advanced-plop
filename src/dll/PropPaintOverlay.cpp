@@ -171,26 +171,31 @@ void PropPaintOverlay::EmitGrid_(const cS3DVector3& center, const PropPaintSetti
     for (float x = xStart; x <= xEnd + kEpsilon; x += gridStep) {
         const bool major = isMajorLine(x);
         const DWORD color = major ? kGridMajorColor : kGridMinorColor;
-        const float thickness = major ? 0.28f : 0.16f;
-        EmitLine_(cS3DVector3(x, center.fY, zStart), cS3DVector3(x, center.fY, zEnd), thickness, color, kLayerShape);
+        const float thickness = major ? 0.42f : 0.26f;
+        EmitLine_(cS3DVector3(x, center.fY, zStart), cS3DVector3(x, center.fY, zEnd), thickness, color, kLayerGrid);
     }
 
     for (float z = zStart; z <= zEnd + kEpsilon; z += gridStep) {
         const bool major = isMajorLine(z);
         const DWORD color = major ? kGridMajorColor : kGridMinorColor;
-        const float thickness = major ? 0.28f : 0.16f;
-        EmitLine_(cS3DVector3(xStart, center.fY, z), cS3DVector3(xEnd, center.fY, z), thickness, color, kLayerShape);
+        const float thickness = major ? 0.42f : 0.26f;
+        EmitLine_(cS3DVector3(xStart, center.fY, z), cS3DVector3(xEnd, center.fY, z), thickness, color, kLayerGrid);
     }
 }
 
-void PropPaintOverlay::Draw(IDirect3DDevice7* device) {
+void PropPaintOverlay::Draw(IDirect3DDevice7* device, const bool drawGrid) {
     if (!device || Empty()) {
         return;
     }
 
     SetupRenderState_(device);
 
-    for (const auto& layer : layers_) {
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        if (!drawGrid && i == kLayerGrid) {
+            continue;
+        }
+
+        const auto& layer = layers_[i];
         if (!layer.visible || layer.vertices.empty()) {
             continue;
         }

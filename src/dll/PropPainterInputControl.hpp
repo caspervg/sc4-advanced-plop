@@ -38,7 +38,8 @@ struct PropPaintSettings {
     bool alignToPath = false;
     bool randomRotation = false;
     bool showGrid = true;
-    bool snapToGrid = false;
+    bool snapPointsToGrid = false;
+    bool snapPlacementsToGrid = false;
     uint32_t randomSeed = 0;
     std::vector<FamilyEntry> activePalette{};
     float densityVariation = 0.0f;

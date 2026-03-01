@@ -22,7 +22,9 @@ private:
     ImGuiTexture LoadPropTexture_(uint64_t propKey);
     void RenderNewFamilyPopup_();
     void RenderDeleteFamilyPopup_(size_t userFamilyIndex);
-    bool StartPaintingWithSelectedFamily_(PropPaintMode mode);
+    void QueuePaintForSelectedFamily_();
+    void RenderPaintOptionsPopup_();
+    bool StartPaintingWithSelectedFamily_();
     static std::string PropDisplayName_(const Prop& prop);
 
     // Returns the active PropFamily* given the combined index (auto first, then user).
@@ -36,5 +38,16 @@ private:
     bool newFamilyPopupOpen_ = false;
     bool deleteFamilyPopupOpen_ = false;
     char newFamilyName_[128] = {};
+    std::string nameFilter_{};
+    std::string iidFilter_{};
     PropPaintSettings familyPaintDefaults_{};
+
+    struct PendingFamilyPaintState {
+        uint32_t fallbackPropId = 0;
+        std::string familyName;
+        PropPaintSettings settings{};
+        bool open = false;
+    };
+
+    PendingFamilyPaintState pendingPaint_{};
 };

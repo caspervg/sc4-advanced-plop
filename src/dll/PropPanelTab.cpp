@@ -378,7 +378,17 @@ void PropPanelTab::RenderRotationModal_() {
         ImGui::Separator();
         ImGui::TextUnformatted("Grid");
         ImGui::Checkbox("Show grid overlay", &pendingPaint_.settings.showGrid);
-        ImGui::Checkbox("Snap to grid", &pendingPaint_.settings.snapToGrid);
+        ImGui::Checkbox("Snap points to grid", &pendingPaint_.settings.snapPointsToGrid);
+        if (pendingPaint_.settings.snapPointsToGrid) {
+            ImGui::Checkbox("Also snap placements to grid", &pendingPaint_.settings.snapPlacementsToGrid);
+        }
+        else {
+            pendingPaint_.settings.snapPlacementsToGrid = false;
+            ImGui::BeginDisabled();
+            bool snapPlacements = false;
+            ImGui::Checkbox("Also snap placements to grid", &snapPlacements);
+            ImGui::EndDisabled();
+        }
         ImGui::SliderFloat("Grid step (m)", &pendingPaint_.settings.gridStepMeters, 1.0f, 16.0f, "%.1f");
 
         if (pendingPaint_.settings.mode == PropPaintMode::Line) {

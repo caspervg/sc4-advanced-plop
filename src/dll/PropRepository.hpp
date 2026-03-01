@@ -14,6 +14,7 @@ public:
     [[nodiscard]] const std::unordered_map<uint64_t, Prop>& GetPropsById() const { return propsById_; }
     [[nodiscard]] const std::unordered_map<uint32_t, std::string>& GetPropFamilyNames() const { return propFamilyNames_; }
     [[nodiscard]] const std::vector<PropFamily>& GetAutoFamilies() const { return autoFamilies_; }
+    [[nodiscard]] const std::vector<uint32_t>& GetAutoFamilyIds() const { return autoFamilyIds_; }
     [[nodiscard]] const Prop* FindPropByInstanceId(uint32_t instanceId) const;
 
 private:
@@ -26,4 +27,5 @@ private:
     std::unordered_map<uint32_t, std::string> propFamilyNames_;
     std::vector<PropFamilyInfo> propFamilyInfos_;
     std::vector<PropFamily> autoFamilies_;
+    std::vector<uint32_t> autoFamilyIds_;
 };
