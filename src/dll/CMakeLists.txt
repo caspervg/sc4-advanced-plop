@@ -1,5 +1,5 @@
 if(NOT WIN32)
-    message(STATUS "SC4AdvancedLotPlop DLL is only built on Win32. Skipping the dll target.")
+    message(STATUS "SC4PlopAndPaint DLL is only built on Win32. Skipping the dll target.")
     return()
 endif()
 
@@ -29,7 +29,7 @@ add_library(gzcom2 STATIC ${GZCOM_SOURCES} ${GZCOM_HEADERS})
 target_include_directories(gzcom2 PUBLIC ${GZCOM_DIR}/include)
 
 file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
-set(SC4_DLL_DEF "${CMAKE_CURRENT_SOURCE_DIR}/SC4AdvancedLotPlop.def")
+set(SC4_DLL_DEF "${CMAKE_CURRENT_SOURCE_DIR}/SC4PlopAndPaint.def")
 
 add_library(${PROJECT_NAME} SHARED ${PROJECT_SOURCES} ${SC4_DLL_DEF})
 target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX IMGUI_DLL_IMPORT)
@@ -39,6 +39,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/vendor/DirectXTK/Inc
+    ${CMAKE_SOURCE_DIR}/vendor/mINI/src
     ${IMGUI_PUBLIC_DIR}
     ${IMGUI_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/vendor/wil/include
@@ -50,7 +51,7 @@ set(SC4_DLL_LINK_LIBS
     reflectcpp::reflectcpp
     gzcom2
 )
-list(APPEND SC4_DLL_LINK_LIBS SC4AdvancedLotPlopCore)
+list(APPEND SC4_DLL_LINK_LIBS SC4PlopAndPaintCore)
 
 # Locate and link imgui library produced by sc4-imgui-service
 # IMPORTANT: Must use the sc4-imgui-service imgui.lib, NOT the vcpkg version!
@@ -83,7 +84,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${SC4_DLL_LINK_LIBS})
 
 # Build settings
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    OUTPUT_NAME "SC4AdvancedLotPlop"
+    OUTPUT_NAME "SC4PlopAndPaint"
     SUFFIX ".dll"
     PREFIX ""
 )
@@ -122,11 +123,11 @@ if(WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:${PROJECT_NAME}>
                 "${SC4_PLUGINS_DIR}/"
-            COMMENT "Deploying SC4AdvancedLotPlop.dll to Plugins folder"
+            COMMENT "Deploying SC4PlopAndPaint.dll to Plugins folder"
         )
 
         message(STATUS "Deployment targets configured:")
-        message(STATUS "  - SC4AdvancedLotPlop.dll -> ${SC4_PLUGINS_DIR}/")
+        message(STATUS "  - SC4PlopAndPaint.dll -> ${SC4_PLUGINS_DIR}/")
     else()
         message(WARNING "SC4 installation not found. Manual deployment required.")
     endif()

@@ -8,7 +8,7 @@
 #include "spdlog/spdlog.h"
 
 
-LotPlopPanel::LotPlopPanel(SC4AdvancedLotPlopDirector* director,
+LotPlopPanel::LotPlopPanel(SC4PlopAndPaintDirector* director,
                            LotRepository* lots,
                            PropRepository* props,
                            FavoritesRepository* favorites,

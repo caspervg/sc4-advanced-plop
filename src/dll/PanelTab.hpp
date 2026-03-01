@@ -1,17 +1,17 @@
 #pragma once
 #include <cstdint>
 
-#include "SC4AdvancedLotPlopDirector.hpp"
+#include "FavoritesRepository.hpp"
 #include "LotRepository.hpp"
 #include "PropRepository.hpp"
-#include "FavoritesRepository.hpp"
+#include "SC4PlopAndPaintDirector.hpp"
 
 
 class cIGZImGuiService;
 
 class PanelTab {
 public:
-    PanelTab(SC4AdvancedLotPlopDirector* director,
+    PanelTab(SC4PlopAndPaintDirector* director,
              LotRepository* lots,
              PropRepository* props,
              FavoritesRepository* favorites,
@@ -39,7 +39,7 @@ public:
     virtual void Abandon() {}
 
 protected:
-    SC4AdvancedLotPlopDirector* director_;  // game actions only
+    SC4PlopAndPaintDirector* director_;  // game actions only
     LotRepository*       lots_;
     PropRepository*      props_;
     FavoritesRepository* favorites_;

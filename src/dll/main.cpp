@@ -1,6 +1,6 @@
-#include "SC4AdvancedLotPlopDirector.hpp"
+#include "SC4PlopAndPaintDirector.hpp"
 
-static SC4AdvancedLotPlopDirector sDirector;
+static SC4PlopAndPaintDirector sDirector;
 
 cRZCOMDllDirector* RZGetCOMDllDirector()
 {

@@ -1,4 +1,4 @@
-set(SHARED_CORE_NAME SC4AdvancedLotPlopCore)
+set(SHARED_CORE_NAME SC4PlopAndPaintCore)
 
 # Create header-only interface library
 add_library(${SHARED_CORE_NAME} INTERFACE)

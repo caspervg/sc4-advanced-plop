@@ -16,7 +16,7 @@ endif()
 # Release builds use /MD (with release DLLs from vcpkg bin)
 # This is handled automatically by CMAKE_MSVC_RUNTIME_LIBRARY per config
 
-project(SC4AdvancedLotPlop VERSION 1.0.0 LANGUAGES C CXX)
+project(SC4PlopAndPaint VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

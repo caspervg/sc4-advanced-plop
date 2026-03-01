@@ -36,11 +36,11 @@ class cIGZS3DCameraService;
 static constexpr uint32_t kSC4MessagePostCityInit = 0x26D31EC1;
 static constexpr uint32_t kSC4MessagePreCityShutdown = 0x26D31EC2;
 
-class SC4AdvancedLotPlopDirector final : public cRZMessage2COMDirector
+class SC4PlopAndPaintDirector final : public cRZMessage2COMDirector
 {
 public:
-    SC4AdvancedLotPlopDirector();
-    ~SC4AdvancedLotPlopDirector() override;
+    SC4PlopAndPaintDirector();
+    ~SC4PlopAndPaintDirector() override;
 
     uint32_t GetDirectorID() const override;
     bool OnStart(cIGZCOM* pCOM) override;

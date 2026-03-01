@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include "entities.hpp"
+#include "shared/entities.hpp"
 
 namespace PropSize {
     constexpr auto kMinSize = 0.0f;

@@ -3,14 +3,14 @@
 #include <vector>
 #include "FilterableTablePanel.hpp"
 #include "PanelTab.hpp"
-#include "PropPainterInputControl.hpp"
 #include "PropFilterHelper.hpp"
+#include "PropPainterInputControl.hpp"
 #include "ThumbnailCache.hpp"
 #include "public/ImGuiTexture.h"
 
 class PropPanelTab : public FilterableTablePanel, public PanelTab {
 public:
-    PropPanelTab(SC4AdvancedLotPlopDirector* director,
+    PropPanelTab(SC4PlopAndPaintDirector* director,
                  LotRepository* lots, PropRepository* props, FavoritesRepository* favorites,
                  cIGZImGuiService* imguiService)
         : PanelTab(director, lots, props, favorites, imguiService) {}

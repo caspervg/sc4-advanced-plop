@@ -37,21 +37,9 @@ void PropRepository::Load() {
 
             spdlog::info("Loaded {} props and {} prop families from {}",
                          props_.size(), propFamilyNames_.size(), cborPath.string());
-            return;
-        }
-
-        if (auto legacyResult = rfl::cbor::load<std::vector<Prop>>(cborPath.string())) {
-            props_ = std::move(*legacyResult);
-            propFamilyNames_.clear();
-            propFamilyInfos_.clear();
-            RebuildIndexes_();
-            BuildAutoFamilies_();
-
-            spdlog::info("Loaded {} props from legacy cache format in {}",
-                         props_.size(), cborPath.string());
         }
         else {
-            spdlog::error("Failed to load props from CBOR file: {}", legacyResult.error().what());
+            spdlog::error("Failed to load props from CBOR file: {}", result.error().what());
         }
     }
     catch (const std::exception& e) {

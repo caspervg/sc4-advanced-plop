@@ -66,6 +66,7 @@ jobs:
           cp LICENSE.txt dist-package/
           cp dist/THIRD_PARTY_NOTICES.txt dist-package/
           cp dist/SC4PlopAndPaintInstaller.nsi dist-package/
+          cp dist/SC4PlopAndPaint.ini dist-package/PLACE_IN_YOUR_PLUGINS_FOLDER/
           [ -f dist/SC4PlopAndPaint.dat ] && cp dist/SC4PlopAndPaint.dat dist-package/PLACE_IN_YOUR_PLUGINS_FOLDER/
           [ -f vendor/sc4-properties/new_properties.xml ] && cp vendor/sc4-properties/new_properties.xml dist-package/PropertyMapper.xml
 

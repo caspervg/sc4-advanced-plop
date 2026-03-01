@@ -6,7 +6,7 @@
 
 class BuildingsPanelTab : public PanelTab {
 public:
-    BuildingsPanelTab(SC4AdvancedLotPlopDirector* director,
+    BuildingsPanelTab(SC4PlopAndPaintDirector* director,
                       LotRepository* lots, PropRepository* props, FavoritesRepository* favorites,
                       cIGZImGuiService* imguiService)
         : PanelTab(director, lots, props, favorites, imguiService) {}

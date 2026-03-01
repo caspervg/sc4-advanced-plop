@@ -1,4 +1,4 @@
-set(APP_NAME SC4AdvancedLotPlopCli)
+set(APP_NAME SC4PlopAndPaintCli)
 
 # Collect source files from app directory and services subdirectory
 file(GLOB APP_SOURCES CONFIGURE_DEPENDS
@@ -10,7 +10,7 @@ add_executable(${APP_NAME} ${APP_SOURCES})
 target_compile_definitions(${APP_NAME} PRIVATE NOMINMAX)
 target_compile_definitions(${APP_NAME}
     PRIVATE
-        SC4_ADVANCED_LOT_PLOP_VERSION="${PROJECT_VERSION}"
+        SC4_PLOP_AND_PAINT_VERSION="${PROJECT_VERSION}"
 )
 
 target_include_directories(${APP_NAME} PRIVATE
@@ -21,7 +21,7 @@ target_include_directories(${APP_NAME} PRIVATE
 
 target_link_libraries(${APP_NAME} PRIVATE
     spdlog::spdlog
-    SC4AdvancedLotPlopCore
+    SC4PlopAndPaintCore
     taywee::args
     DBPFKitLib
     utf8cpp::utf8cpp

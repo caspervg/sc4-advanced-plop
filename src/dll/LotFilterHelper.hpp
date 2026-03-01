@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include "entities.hpp"
+#include "shared/entities.hpp"
 
 // Lot size constraints
 namespace LotSize {

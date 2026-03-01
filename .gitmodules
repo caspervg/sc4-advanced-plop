@@ -16,3 +16,6 @@
 [submodule "vendor/vcpkg"]
 	path = vendor/vcpkg
 	url = https://github.com/microsoft/vcpkg.git
+[submodule "vendor/mINI"]
+	path = vendor/mINI
+	url = https://github.com/metayeti/mINI.git

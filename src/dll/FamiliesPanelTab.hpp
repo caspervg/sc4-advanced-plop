@@ -8,7 +8,7 @@
 
 class FamiliesPanelTab : public PanelTab {
 public:
-    FamiliesPanelTab(SC4AdvancedLotPlopDirector* director,
+    FamiliesPanelTab(SC4PlopAndPaintDirector* director,
                      LotRepository* lots, PropRepository* props, FavoritesRepository* favorites,
                      cIGZImGuiService* imguiService)
         : PanelTab(director, lots, props, favorites, imguiService) {}
