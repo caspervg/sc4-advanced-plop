@@ -203,23 +203,28 @@ void DbpfIndexService::worker_() {
                 }
 
                 const auto& index = reader.GetIndex();
-                size_t entriesCount = 0;
+
+                // Accumulate entries locally, then merge under a single lock
+                std::unordered_map<uint32_t, std::vector<DBPF::Tgi>> localTypeToTgis;
+                std::vector<DBPF::Tgi> localTgis;
+                localTgis.reserve(index.size());
 
                 for (const auto& entry : index) {
                     if (stop_) break;
-
-                    {
-                        std::unique_lock lock(mutex_);
-                        typeToTgis_[entry.tgi.type].push_back(entry.tgi);
-                        tgiToFiles_[entry.tgi].push_back(filePath);
-                    }
-
-                    entriesCount++;
+                    localTypeToTgis[entry.tgi.type].push_back(entry.tgi);
+                    localTgis.push_back(entry.tgi);
                 }
 
                 {
                     std::unique_lock lock(mutex_);
-                    entriesIndexed_ += entriesCount;
+                    for (auto& [type, tgis] : localTypeToTgis) {
+                        auto& dest = typeToTgis_[type];
+                        dest.insert(dest.end(), tgis.begin(), tgis.end());
+                    }
+                    for (const auto& tgi : localTgis) {
+                        tgiToFiles_[tgi].push_back(filePath);
+                    }
+                    entriesIndexed_ += localTgis.size();
                     ++processedFiles_;
                 }
 
