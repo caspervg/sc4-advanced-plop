@@ -8,7 +8,7 @@
 #include "DBPFReader.h"
 #include "ParseTypes.h"
 
-DbpfIndexService::DbpfIndexService(PluginLocator  locator) : locator_(std::move(locator)) {}
+DbpfIndexService::DbpfIndexService(PluginLocator locator) : locator_(std::move(locator)) {}
 
 DbpfIndexService::~DbpfIndexService() { shutdown(); }
 
@@ -29,7 +29,6 @@ void DbpfIndexService::start() {
         currentFile_.clear();
         files_.clear();
         tgiToFiles_.clear();
-        typeInstanceToTgis_.clear();
     }
 
     running_ = true;
@@ -63,11 +62,6 @@ auto DbpfIndexService::snapshot() const -> ScanProgress {
 auto DbpfIndexService::tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash>& {
     std::shared_lock lock(mutex_);
     return tgiToFiles_;
-}
-
-auto DbpfIndexService::typeInstanceIndex() const -> const std::unordered_map<uint64_t, std::vector<DBPF::Tgi>>& {
-    std::shared_lock lock(mutex_);
-    return typeInstanceToTgis_;
 }
 
 auto DbpfIndexService::typeIndex() const -> const std::unordered_map<uint32_t, std::vector<DBPF::Tgi>>& {
@@ -214,12 +208,8 @@ void DbpfIndexService::worker_() {
                 for (const auto& entry : index) {
                     if (stop_) break;
 
-                    // Create a type-instance key for indexing
-                    uint64_t typeInstanceKey = (static_cast<uint64_t>(entry.tgi.type) << 32) | entry.tgi.instance;
-
                     {
                         std::unique_lock lock(mutex_);
-                        typeInstanceToTgis_[typeInstanceKey].push_back(entry.tgi);
                         typeToTgis_[entry.tgi.type].push_back(entry.tgi);
                         tgiToFiles_[entry.tgi].push_back(filePath);
                     }

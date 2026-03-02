@@ -152,25 +152,27 @@ namespace {
 
             // Use the index service to get exemplars and cohorts across all files.
             logger.info("Processing exemplar/cohort records using type index...");
-            const auto& tgiIndex = indexService.tgiIndex();
-            const auto exemplarTgis = indexService.typeIndex(kTypeIdExemplar);
-            const auto cohortTgis = indexService.typeIndex(kTypeIdCohort);
-
-            std::vector<DBPF::Tgi> recordTgis;
-            recordTgis.reserve(exemplarTgis.size() + cohortTgis.size());
-            recordTgis.insert(recordTgis.end(), exemplarTgis.begin(), exemplarTgis.end());
-            recordTgis.insert(recordTgis.end(), cohortTgis.begin(), cohortTgis.end());
-
-            logger.info("Found {} exemplars and {} cohorts to process",
-                        exemplarTgis.size(), cohortTgis.size());
 
             // Group record TGIs by file for efficient batch processing.
             std::unordered_map<fs::path, std::vector<DBPF::Tgi>> fileToExemplarTgis;
-            for (const auto& tgi : recordTgis) {
-                const auto& filePaths = tgiIndex.at(tgi);
-                // Add this TGI to the first file that contains it
-                if (!filePaths.empty()) {
-                    fileToExemplarTgis[filePaths[0]].push_back(tgi);
+            {
+                const auto& tgiIndex = indexService.tgiIndex();
+                auto exemplarTgis = indexService.typeIndex(kTypeIdExemplar);
+                auto cohortTgis = indexService.typeIndex(kTypeIdCohort);
+
+                logger.info("Found {} exemplars and {} cohorts to process",
+                            exemplarTgis.size(), cohortTgis.size());
+
+                std::vector<DBPF::Tgi> recordTgis;
+                recordTgis.reserve(exemplarTgis.size() + cohortTgis.size());
+                recordTgis.insert(recordTgis.end(), exemplarTgis.begin(), exemplarTgis.end());
+                recordTgis.insert(recordTgis.end(), cohortTgis.begin(), cohortTgis.end());
+
+                for (const auto& tgi : recordTgis) {
+                    auto it = tgiIndex.find(tgi);
+                    if (it != tgiIndex.end() && !it->second.empty()) {
+                        fileToExemplarTgis[it->second[0]].push_back(tgi);
+                    }
                 }
             }
 
@@ -269,6 +271,9 @@ namespace {
                 }
             }
 
+            fileToExemplarTgis.clear();
+            seenPropKeys.clear();
+
             // Build family-to-buildings map for resolving growable lot references
             std::unordered_map<uint32_t, std::vector<uint32_t>> familyToBuildingsMap;
             for (const auto& [instanceId, building] : buildingMap) {
@@ -335,6 +340,8 @@ namespace {
                 }
             }
 
+            buildingMap.clear();
+
             if (!missingBuildingIds.empty()) {
                 logger.warn("Missing building references for {} lots:", missingBuildingIds.size());
             }
@@ -345,6 +352,8 @@ namespace {
                     allBuildings.push_back(std::move(building));
                 }
             }
+
+            builtBuildings.clear();
 
             logger.info("Scan complete: {} buildings with lots, {} lots, {} parse errors",
                         allBuildings.size(), lotsFound, parseErrors);

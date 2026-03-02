@@ -33,7 +33,6 @@ public:
     [[nodiscard]] auto isRunning() const -> bool;
     [[nodiscard]] auto snapshot() const -> ScanProgress;
     [[nodiscard]] auto tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash>&;
-    [[nodiscard]] auto typeInstanceIndex() const -> const std::unordered_map<uint64_t, std::vector<DBPF::Tgi>>&;
     auto typeIndex() const -> const std::unordered_map<uint32_t, std::vector<DBPF::Tgi>>&;
     auto typeIndex(uint32_t type) -> std::vector<DBPF::Tgi>;
     [[nodiscard]] auto dbpfFiles() const -> const std::vector<std::filesystem::path>&;
@@ -70,7 +69,6 @@ private:
     std::vector<std::filesystem::path> files_;
     std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash> tgiToFiles_;
     std::unordered_map<uint32_t, std::vector<DBPF::Tgi>> typeToTgis_;
-    std::unordered_map<uint64_t, std::vector<DBPF::Tgi>> typeInstanceToTgis_;
 
     // Cache of DBPF readers (one per file) for fast exemplar loading
     mutable std::unordered_map<std::filesystem::path, std::unique_ptr<DBPF::Reader>> readerCache_;
