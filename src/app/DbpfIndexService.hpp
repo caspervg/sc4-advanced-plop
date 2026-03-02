@@ -5,6 +5,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -34,7 +35,7 @@ public:
     [[nodiscard]] auto snapshot() const -> ScanProgress;
     [[nodiscard]] auto tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash>&;
     auto typeIndex() const -> const std::unordered_map<uint32_t, std::vector<DBPF::Tgi>>&;
-    auto typeIndex(uint32_t type) -> std::vector<DBPF::Tgi>;
+    [[nodiscard]] auto typeIndex(uint32_t type) const -> std::span<const DBPF::Tgi>;
     [[nodiscard]] auto dbpfFiles() const -> const std::vector<std::filesystem::path>&;
     [[nodiscard]] auto pluginLocator() const -> const PluginLocator&;
 

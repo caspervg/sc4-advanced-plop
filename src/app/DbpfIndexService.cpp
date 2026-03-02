@@ -69,10 +69,11 @@ auto DbpfIndexService::typeIndex() const -> const std::unordered_map<uint32_t, s
     return typeToTgis_;
 }
 
-auto DbpfIndexService::typeIndex(const uint32_t type) -> std::vector<DBPF::Tgi> {
+auto DbpfIndexService::typeIndex(const uint32_t type) const -> std::span<const DBPF::Tgi> {
     std::shared_lock lock(mutex_);
-    if (typeToTgis_.contains(type)) {
-        return typeToTgis_.at(type);
+    auto it = typeToTgis_.find(type);
+    if (it != typeToTgis_.end()) {
+        return it->second;
     }
     return {};
 }
