@@ -42,19 +42,32 @@ namespace {
     constexpr uint32_t kTypeIdExemplar = 0x6534284Au;
     constexpr uint32_t kTypeIdCohort = 0x05342861u;
 
-    PluginConfiguration GetDefaultPluginConfiguration() {
-        const char* userProfile = std::getenv("USERPROFILE");
-        const char* programFiles = std::getenv("PROGRAMFILES(x86)");
-        const auto gameRoot = fs::path(programFiles) / "SimCity 4 Deluxe Edition";
-        if (userProfile && programFiles) {
-            return PluginConfiguration{
-                .gameRoot = gameRoot,
-                .localeDir = "English",
-                .gamePluginsRoot = gameRoot / "Plugins",
-                .userPluginsRoot = fs::path(userProfile) / "Documents" / "SimCity 4" / "Plugins"
-            };
+    const char* GetFirstEnvironmentValue(std::initializer_list<const char*> names) {
+        for (const char* name : names) {
+            if (const char* value = std::getenv(name); value && value[0] != '\0') {
+                return value;
+            }
         }
-        return PluginConfiguration{};
+        return nullptr;
+    }
+
+    PluginConfiguration GetDefaultPluginConfiguration() {
+        PluginConfiguration config{};
+        config.localeDir = "English";
+
+        const char* userProfile = GetFirstEnvironmentValue({"USERPROFILE"});
+        const char* programFiles = GetFirstEnvironmentValue({"PROGRAMFILES(X86)", "PROGRAMFILES(x86)", "PROGRAMFILES"});
+
+        if (programFiles) {
+            config.gameRoot = fs::path(programFiles) / "SimCity 4 Deluxe Edition";
+            config.gamePluginsRoot = config.gameRoot / "Plugins";
+        }
+
+        if (userProfile) {
+            config.userPluginsRoot = fs::path(userProfile) / "Documents" / "SimCity 4" / "Plugins";
+        }
+
+        return config;
     }
 
     void ScanAndAnalyzeExemplars(const PluginConfiguration& config,
