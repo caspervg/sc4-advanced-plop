@@ -156,7 +156,6 @@ namespace {
             // Group record TGIs by file for efficient batch processing.
             std::unordered_map<fs::path, std::vector<DBPF::Tgi>> fileToExemplarTgis;
             {
-                const auto& tgiIndex = indexService.tgiIndex();
                 auto exemplarTgis = indexService.typeIndex(kTypeIdExemplar);
                 auto cohortTgis = indexService.typeIndex(kTypeIdCohort);
 
@@ -169,9 +168,9 @@ namespace {
                 recordTgis.insert(recordTgis.end(), cohortTgis.begin(), cohortTgis.end());
 
                 for (const auto& tgi : recordTgis) {
-                    auto it = tgiIndex.find(tgi);
-                    if (it != tgiIndex.end() && !it->second.empty()) {
-                        fileToExemplarTgis[it->second[0]].push_back(tgi);
+                    auto files = indexService.lookupFiles(tgi);
+                    if (!files.empty()) {
+                        fileToExemplarTgis[files[0]].push_back(tgi);
                     }
                 }
             }

@@ -28,7 +28,8 @@ void DbpfIndexService::start() {
         std::unique_lock lock(mutex_);
         currentFile_.clear();
         files_.clear();
-        tgiToFiles_.clear();
+        tgiToFileIndices_.clear();
+        pathToIndex_.clear();
     }
 
     running_ = true;
@@ -59,9 +60,23 @@ auto DbpfIndexService::snapshot() const -> ScanProgress {
     };
 }
 
-auto DbpfIndexService::tgiIndex() const -> const std::unordered_map<DBPF::Tgi, std::vector<std::filesystem::path>, DBPF::TgiHash>& {
+auto DbpfIndexService::lookupFiles(const DBPF::Tgi& tgi) const -> std::vector<std::filesystem::path> {
     std::shared_lock lock(mutex_);
-    return tgiToFiles_;
+    auto it = tgiToFileIndices_.find(tgi);
+    if (it == tgiToFileIndices_.end()) {
+        return {};
+    }
+    std::vector<std::filesystem::path> result;
+    result.reserve(it->second.size());
+    for (const auto idx : it->second) {
+        result.push_back(files_[idx]);
+    }
+    return result;
+}
+
+auto DbpfIndexService::containsTgi(const DBPF::Tgi& tgi) const -> bool {
+    std::shared_lock lock(mutex_);
+    return tgiToFileIndices_.contains(tgi);
 }
 
 auto DbpfIndexService::typeIndex() const -> const std::unordered_map<uint32_t, std::vector<DBPF::Tgi>>& {
@@ -97,15 +112,19 @@ ParseExpected<const Exemplar::Record*> DbpfIndexService::loadExemplar(const DBPF
     }
 
     // Not in cache - need to load it
-    // Find which file(s) contain this TGI
-    std::shared_lock readLock(mutex_);
-    auto tgiIt = tgiToFiles_.find(tgi);
-    if (tgiIt == tgiToFiles_.end() || tgiIt->second.empty()) {
-        return Fail("TGI not found in index");
+    // Find which file(s) contain this TGI, resolve indices to paths
+    std::vector<std::filesystem::path> filePaths;
+    {
+        std::shared_lock readLock(mutex_);
+        auto tgiIt = tgiToFileIndices_.find(tgi);
+        if (tgiIt == tgiToFileIndices_.end() || tgiIt->second.empty()) {
+            return Fail("TGI not found in index");
+        }
+        filePaths.reserve(tgiIt->second.size());
+        for (const auto idx : tgiIt->second) {
+            filePaths.push_back(files_[idx]);
+        }
     }
-
-    const auto& filePaths = tgiIt->second;
-    readLock.unlock();
 
     // Try to load from the last file that has it
     for (const auto& filePath : std::ranges::reverse_view(filePaths)) {
@@ -127,18 +146,22 @@ ParseExpected<const Exemplar::Record*> DbpfIndexService::loadExemplar(const DBPF
 }
 
 std::optional<std::vector<uint8_t>> DbpfIndexService::loadEntryData(const DBPF::Tgi& tgi) const {
-    // Find which file(s) contain this TGI
-    std::shared_lock readLock(mutex_);
-    auto tgiIt = tgiToFiles_.find(tgi);
-    if (tgiIt == tgiToFiles_.end() || tgiIt->second.empty()) {
-        return std::nullopt;
+    // Find which file(s) contain this TGI, resolve indices to paths
+    std::vector<std::filesystem::path> filePaths;
+    {
+        std::shared_lock readLock(mutex_);
+        auto tgiIt = tgiToFileIndices_.find(tgi);
+        if (tgiIt == tgiToFileIndices_.end() || tgiIt->second.empty()) {
+            return std::nullopt;
+        }
+        filePaths.reserve(tgiIt->second.size());
+        for (const auto idx : tgiIt->second) {
+            filePaths.push_back(files_[idx]);
+        }
     }
 
-    const auto& filePaths = tgiIt->second;
-    readLock.unlock();
-
     // Try to load from the last file that has it
-    for (const auto & filePath : std::ranges::reverse_view(filePaths)) {
+    for (const auto& filePath : std::ranges::reverse_view(filePaths)) {
         const auto* reader = getReader(filePath);
         if (!reader) {
             continue;
@@ -182,6 +205,9 @@ void DbpfIndexService::worker_() {
             std::unique_lock lock(mutex_);
             files_ = pluginFiles;
             totalFiles_ = pluginFiles.size();
+            for (uint32_t i = 0; i < pluginFiles.size(); ++i) {
+                pathToIndex_[pluginFiles[i]] = i;
+            }
         }
 
         for (const auto& filePath : pluginFiles) {
@@ -222,8 +248,9 @@ void DbpfIndexService::worker_() {
                         auto& dest = typeToTgis_[type];
                         dest.insert(dest.end(), tgis.begin(), tgis.end());
                     }
+                    auto fileIdx = pathToIndex_.at(filePath);
                     for (const auto& tgi : localTgis) {
-                        tgiToFiles_[tgi].push_back(filePath);
+                        tgiToFileIndices_[tgi].push_back(fileIdx);
                     }
                     readerCache_[filePath] = std::move(reader);
                     entriesIndexed_ += localTgis.size();

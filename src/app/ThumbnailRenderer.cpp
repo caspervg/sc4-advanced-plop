@@ -189,14 +189,13 @@ namespace thumb {
             return nullptr;
         }
 
-        const auto& tgiIndex = indexService_.tgiIndex();
-        const auto indexIt = tgiIndex.find(tgi);
-        if (indexIt == tgiIndex.end()) {
+        auto filePaths = indexService_.lookupFiles(tgi);
+        if (filePaths.empty()) {
             failedModels_.insert(tgi);
             return nullptr;
         }
 
-        for (const auto& path : indexIt->second) {
+        for (const auto& path : filePaths) {
             DBPF::Reader* reader = indexService_.getReader(path);
             if (!reader) {
                 continue;
@@ -229,13 +228,12 @@ namespace thumb {
 
     std::optional<FSH::Record> ThumbnailRenderer::loadTexture_(uint32_t inst, uint32_t group) const {
         DBPF::Tgi tgi{kTypeIdFSH, group, inst};
-        const auto& tgiIndex = indexService_.tgiIndex();
-        const auto indexIt = tgiIndex.find(tgi);
-        if (indexIt == tgiIndex.end()) {
+        auto filePaths = indexService_.lookupFiles(tgi);
+        if (filePaths.empty()) {
             return std::nullopt;
         }
 
-        for (const auto& path : indexIt->second) {
+        for (const auto& path : filePaths) {
             const DBPF::Reader* reader = indexService_.getReader(path);
             if (!reader) {
                 continue;

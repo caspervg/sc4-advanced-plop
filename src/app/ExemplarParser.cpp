@@ -690,15 +690,10 @@ const Exemplar::Property* ExemplarParser::findPropertyRecursive(
     }
     visitedCohorts.insert(exemplar.parent.instance);
 
-    // Use the index service to find the parent cohort across all DBPF files
-    const auto& tgiIndex = indexService_->tgiIndex();
-
     // Use the full parent TGI (type, group, instance) from the exemplar header
     const DBPF::Tgi& parentTgi = exemplar.parent;
 
-    auto tgiIt = tgiIndex.find(parentTgi);
-
-    if (tgiIt != tgiIndex.end()) {
+    if (indexService_->containsTgi(parentTgi)) {
         // Use the index service's cached loader instead of opening files repeatedly
         auto parentExemplarResult = indexService_->loadExemplar(parentTgi);
         if (parentExemplarResult.has_value()) {
@@ -920,13 +915,12 @@ std::optional<std::array<float, 6>> ExemplarParser::loadModelBounds_(const DBPF:
         return std::nullopt;
     }
 
-    const auto& tgiIndex = indexService_->tgiIndex();
-    const auto tgiIt = tgiIndex.find(modelTgi);
-    if (tgiIt == tgiIndex.end() || tgiIt->second.empty()) {
+    auto filePaths = indexService_->lookupFiles(modelTgi);
+    if (filePaths.empty()) {
         return std::nullopt;
     }
 
-    for (const auto& filePath : std::ranges::reverse_view(tgiIt->second)) {
+    for (const auto& filePath : std::ranges::reverse_view(filePaths)) {
         auto* reader = indexService_->getReader(filePath);
         if (!reader) {
             continue;
