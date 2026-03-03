@@ -19,6 +19,7 @@
 #include "GZServPtrs.h"
 #include "imgui.h"
 #include "PropPainterInputControl.hpp"
+#include "PropPaintStatusPanel.hpp"
 #include "PropStripperInputControl.hpp"
 #include "../shared/entities.hpp"
 #include "public/cIGZImGuiService.h"
@@ -100,6 +101,8 @@ private:
     bool propPainting_{false};
     cRZAutoRefCount<PropStripperInputControl> propStripperControl_;
     bool propStripping_{false};
+    std::unique_ptr<PropPaintStatusPanel> statusPanel_;
+    bool statusPanelRegistered_{false};
     uint32_t drawCallbackToken_{0};
     PropPreviewMode defaultPropPreviewMode_ = PropPreviewMode::Outline;
     bool defaultShowGridOverlay_ = true;

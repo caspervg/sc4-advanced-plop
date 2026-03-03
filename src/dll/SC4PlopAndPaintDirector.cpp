@@ -31,6 +31,7 @@ namespace {
     constexpr auto kGZWin_SC4View3DWin = 0x9a47b417u;
 
     constexpr auto kLotPlopPanelId = 0xCA500001u;
+    constexpr auto kStatusPanelId = 0xCA500002u;
     constexpr auto kToggleLotPlopWindowShortcutID = 0x9F21C3A1u;
     constexpr auto kKeyConfigType = 0xA2E3D533u;
     constexpr auto kKeyConfigGroup = 0x8F1E6D69u;
@@ -147,6 +148,15 @@ bool SC4PlopAndPaintDirector::PostAppInit() {
             panel_->SetOpen(false);
             LOG_INFO("Registered ImGui panel");
         }
+
+        statusPanel_ = std::make_unique<PropPaintStatusPanel>();
+        const ImGuiPanelDesc statusDesc = ImGuiPanelAdapter<PropPaintStatusPanel>::MakeDesc(
+            statusPanel_.get(), kStatusPanelId, 101, true
+        );
+        if (imguiService_->RegisterPanel(statusDesc)) {
+            statusPanelRegistered_ = true;
+            LOG_INFO("Registered status panel");
+        }
     }
     else {
         LOG_WARN("ImGui service not found or not available");
@@ -184,6 +194,12 @@ bool SC4PlopAndPaintDirector::PostAppShutdown() {
         propPainterControl_->Shutdown();
         propPainterControl_.Reset();
     }
+
+    if (imguiService_ && statusPanelRegistered_) {
+        imguiService_->UnregisterPanel(kStatusPanelId);
+        statusPanelRegistered_ = false;
+    }
+    statusPanel_.reset();
 
     if (imguiService_ && panelRegistered_) {
         SetLotPlopPanelVisible(false);
@@ -319,6 +335,9 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
             pView3D_->RemoveCurrentViewInputControl(false);
         }
         propPainting_ = false;
+        if (statusPanel_) {
+            statusPanel_->SetVisible(false);
+        }
         LOG_INFO("Stopped prop painting");
     });
 
@@ -331,6 +350,10 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
     }
 
     propPainting_ = true;
+    if (statusPanel_) {
+        statusPanel_->SetActiveControl(propPainterControl_);
+        statusPanel_->SetVisible(true);
+    }
     LOG_INFO("Started prop painting: 0x{:08X}, rotation {}", propId, settings.rotation);
     return true;
 }
@@ -355,6 +378,9 @@ void SC4PlopAndPaintDirector::StopPropPainting() {
     }
 
     propPainting_ = false;
+    if (statusPanel_) {
+        statusPanel_->SetVisible(false);
+    }
     LOG_INFO("Stopped prop painting");
 }
 

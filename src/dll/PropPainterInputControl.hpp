@@ -32,7 +32,8 @@ enum class PropPaintMode {
 enum class PropPreviewMode {
     Outline = 0,
     FullModel = 1,
-    Combined = 2
+    Combined = 2,
+    Hidden = 3
 };
 
 struct PropPaintSettings {
@@ -168,8 +169,5 @@ private:
     std::vector<PropPaintOverlay::PreviewPlacement> cachedPolygonPlacements_{};
     bool polygonPreviewDirty_ = true;
 
-    struct PreviewSettings {
-        bool showPreview = true;
-    } previewSettings_;
     bool cancelPending_ = false;
 };

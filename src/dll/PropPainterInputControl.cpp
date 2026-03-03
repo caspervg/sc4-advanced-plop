@@ -199,7 +199,7 @@ void PropPainterInputControl::DrawOverlay(IDirect3DDevice7* device) {
         return;
     }
 
-    if (!device || !previewSettings_.showPreview) {
+    if (!device || settings_.previewMode == PropPreviewMode::Hidden) {
         return;
     }
 
@@ -381,8 +381,71 @@ bool PropPainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const u
     }
 
     if (vkCode == 'P') {
-        previewSettings_.showPreview = !previewSettings_.showPreview;
-        LOG_INFO("Toggled preview visibility: {}", previewSettings_.showPreview);
+        int mode = (static_cast<int>(settings_.previewMode) + 1) % 4;
+        settings_.previewMode = static_cast<PropPreviewMode>(mode);
+        static constexpr const char* kNames[] = {"Outline", "Full", "Combined", "Hidden"};
+        LOG_INFO("Preview mode: {}", kNames[mode]);
+        SyncPreviewForState_();
+        return true;
+    }
+
+    if (vkCode == 'G') {
+        settings_.showGrid = !settings_.showGrid;
+        LOG_INFO("Toggled grid visibility: {}", settings_.showGrid);
+        SyncPreviewForState_();
+        return true;
+    }
+
+    if (vkCode == 'S') {
+        settings_.snapPointsToGrid = !settings_.snapPointsToGrid;
+        if (!settings_.snapPointsToGrid) {
+            settings_.snapPlacementsToGrid = false;
+        }
+        LOG_INFO("Toggled snap to grid: {}", settings_.snapPointsToGrid);
+        SyncPreviewForState_();
+        return true;
+    }
+
+    if (vkCode == VK_OEM_4 || vkCode == VK_OEM_6) { // [ and ]
+        static constexpr float kGridSteps[] = {1.0f, 2.0f, 4.0f, 8.0f, 16.0f};
+        static constexpr int kGridStepCount = sizeof(kGridSteps) / sizeof(kGridSteps[0]);
+
+        int currentIdx = 0;
+        float minDist = 999.0f;
+        for (int i = 0; i < kGridStepCount; ++i) {
+            const float dist = std::abs(settings_.gridStepMeters - kGridSteps[i]);
+            if (dist < minDist) {
+                minDist = dist;
+                currentIdx = i;
+            }
+        }
+
+        if (vkCode == VK_OEM_4 && currentIdx > 0) {
+            --currentIdx;
+        } else if (vkCode == VK_OEM_6 && currentIdx < kGridStepCount - 1) {
+            ++currentIdx;
+        }
+
+        settings_.gridStepMeters = kGridSteps[currentIdx];
+        LOG_INFO("Grid step: {:.1f}m", settings_.gridStepMeters);
+        SyncPreviewForState_();
+        return true;
+    }
+
+    if (vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PLUS) {
+        const float delta = (vkCode == VK_OEM_PLUS) ? 0.5f : -0.5f;
+
+        if (state_ == ControlState::ActiveLine) {
+            settings_.spacingMeters = std::clamp(settings_.spacingMeters + delta, 0.5f, 50.0f);
+            LOG_INFO("Line spacing: {:.1f}m", settings_.spacingMeters);
+        } else if (state_ == ControlState::ActivePolygon) {
+            settings_.densityPer100Sqm = std::clamp(settings_.densityPer100Sqm + delta, 0.1f, 20.0f);
+            polygonPreviewDirty_ = true;
+            LOG_INFO("Polygon density: {:.1f}/100m^2", settings_.densityPer100Sqm);
+        } else {
+            return false;
+        }
+
         SyncPreviewForState_();
         return true;
     }
@@ -915,7 +978,7 @@ cISTETerrain* PropPainterInputControl::GetTerrain_() const {
 }
 
 bool PropPainterInputControl::ShouldShowOutlinePreview_() const {
-    if (!previewSettings_.showPreview) {
+    if (settings_.previewMode == PropPreviewMode::Hidden) {
         return false;
     }
 
@@ -927,7 +990,7 @@ bool PropPainterInputControl::ShouldShowOutlinePreview_() const {
 }
 
 bool PropPainterInputControl::ShouldShowModelPreview_() const {
-    return previewSettings_.showPreview &&
+    return settings_.previewMode != PropPreviewMode::Hidden &&
         state_ == ControlState::ActiveDirect &&
         (settings_.previewMode == PropPreviewMode::FullModel || settings_.previewMode == PropPreviewMode::Combined);
 }
