@@ -191,7 +191,9 @@ In `Paint inside polygon`, left-click adds polygon vertices and `Enter` fills th
 
 In line and polygon modes, the first `Enter` generates the batch and places it as pending props. Press `Enter` again to commit those pending props permanently.
 
-![Polygon painting in progress](images/polygon-painting-01-cropped.jpg)
+![Polygon painting in progress, step 1 - building polygon](images/polygon-painting-01-cropped.jpg)
+![Polygon painting in progress, step 2 - placement preview](images/polygon-painting-02-cropped.jpg)
+![Polygon painting in progress, step 3 - final placement](images/polygon-painting-03-cropped.jpg)
 
 Polygon paint mode in action, with the live overlay preview and the status window visible on the map.
 
