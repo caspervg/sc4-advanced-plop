@@ -371,6 +371,10 @@ bool SC4PlopAndPaintDirector::SwitchPropPaintingTarget(uint32_t propId, const st
 }
 
 void SC4PlopAndPaintDirector::StopPropPainting() {
+    if (propPainterControl_) {
+        propPainterControl_->CancelAllPlacements();
+    }
+
     if (pView3D_ && propPainterControl_) {
         if (pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
             pView3D_->RemoveCurrentViewInputControl(false);
