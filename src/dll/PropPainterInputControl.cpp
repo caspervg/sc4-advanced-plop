@@ -121,6 +121,7 @@ void PropPainterInputControl::Activate() {
 
 void PropPainterInputControl::Deactivate() {
     ClearCollectedPoints_();
+    DestroyPreviewProp_();
 
     if (state_ != ControlState::Uninitialized) {
         TransitionTo_(propIDToPaint_ != 0 ? ControlState::ReadyWithTarget : ControlState::ReadyNoTarget,

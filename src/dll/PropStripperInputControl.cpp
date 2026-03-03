@@ -106,6 +106,7 @@ void PropStripperInputControl::Activate() {
 
 void PropStripperInputControl::Deactivate() {
     active_ = false;
+    ProcessPendingActions();
     ClearHoveredProp_();
     overlay_.Clear();
     cSC4BaseViewInputControl::Deactivate();
