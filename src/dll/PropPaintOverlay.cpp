@@ -364,10 +364,7 @@ void PropPaintOverlay::RestoreRenderState_(IDirect3DDevice7* device) {
     device->SetTextureStageState(0, D3DTSS_ALPHAARG2, savedState_.alphaArg2);
     device->SetTextureStageState(1, D3DTSS_COLOROP, savedState_.stage1ColorOp);
     device->SetTextureStageState(1, D3DTSS_ALPHAOP, savedState_.stage1AlphaOp);
-    if (savedState_.texture0) {
-        savedState_.texture0->Release();
-        savedState_.texture0 = nullptr;
-    }
+    savedState_.texture0 = nullptr;
 }
 
 void PropPaintOverlay::EmitLine_(const cS3DVector3& a, const cS3DVector3& b,
