@@ -82,6 +82,16 @@ bool PropPainterInputControl::OnMouseDownL(const int32_t x, const int32_t z, con
     return HandleActiveMouseDownL_(x, z, modifiers);
 }
 
+bool PropPainterInputControl::OnMouseDownR(const int32_t /*x*/, const int32_t /*z*/, const uint32_t /*modifiers*/) {
+    if (!IsActiveState_(state_) || !IsOnTop()) {
+        return false;
+    }
+    CancelAllPlacements();
+    LOG_INFO("PropPainterInputControl: RMB pressed, stopping paint mode");
+    cancelPending_ = true;
+    return true;
+}
+
 bool PropPainterInputControl::OnMouseMove(const int32_t x, const int32_t z, const uint32_t modifiers) {
     if (!IsActiveState_(state_) || !IsOnTop()) {
         return false;

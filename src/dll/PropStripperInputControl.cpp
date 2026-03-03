@@ -54,6 +54,16 @@ bool PropStripperInputControl::OnMouseDownL(const int32_t /*x*/, const int32_t /
     return true;
 }
 
+bool PropStripperInputControl::OnMouseDownR(const int32_t /*x*/, const int32_t /*z*/, const uint32_t /*modifiers*/) {
+    if (!active_ || !IsOnTop()) {
+        return false;
+    }
+    ClearHoveredProp_();
+    LOG_INFO("PropStripperInputControl: RMB pressed, exiting strip mode");
+    cancelPending_ = true;
+    return true;
+}
+
 bool PropStripperInputControl::OnMouseMove(const int32_t x, const int32_t z, const uint32_t /*modifiers*/) {
     if (!active_ || !IsOnTop()) {
         return false;

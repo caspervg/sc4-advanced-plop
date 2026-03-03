@@ -118,12 +118,6 @@ void PropPaintOverlay::BuildStripperPreview(const bool cursorValid, const cS3DVe
     EmitLine_(se, sw, kThick, kRectColor, kLayerShape);
     EmitLine_(sw, nw, kThick, kRectColor, kLayerShape);
 
-    // Crosshair at cursor center
-    const float cy = SampleStableTerrainHeight(terrain, cx, cz) + kHeightOffset;
-    const float arm = r * 0.25f;
-    constexpr DWORD kCrossColor = 0xE0FF5555;
-    EmitLine_(cS3DVector3(cx - arm, cy, cz), cS3DVector3(cx + arm, cy, cz), kThick * 0.7f, kCrossColor, kLayerShape);
-    EmitLine_(cS3DVector3(cx, cy, cz - arm), cS3DVector3(cx, cy, cz + arm), kThick * 0.7f, kCrossColor, kLayerShape);
 }
 
 void PropPaintOverlay::BuildDirectPreview(const bool cursorValid,
