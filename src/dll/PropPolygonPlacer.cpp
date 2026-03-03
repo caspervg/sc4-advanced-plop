@@ -9,11 +9,34 @@
 
 namespace {
     constexpr float kEpsilon = 1e-6f;
+
+    uint32_t HashPatchCell_(const int x, const int z, const uint32_t seed) {
+        uint32_t value = seed;
+        value ^= static_cast<uint32_t>(x) * 0x9E3779B9u;
+        value ^= static_cast<uint32_t>(z) * 0x85EBCA6Bu;
+        value ^= value >> 16;
+        value *= 0x7FEB352Du;
+        value ^= value >> 15;
+        value *= 0x846CA68Bu;
+        value ^= value >> 16;
+        return value;
+    }
+
+    float PatchNoise_(const float x, const float z, const float patchCellSize, const uint32_t seed) {
+        if (patchCellSize <= kEpsilon) {
+            return 0.5f;
+        }
+
+        const int patchX = static_cast<int>(std::floor(x / patchCellSize));
+        const int patchZ = static_cast<int>(std::floor(z / patchCellSize));
+        return static_cast<float>(HashPatchCell_(patchX, patchZ, seed)) / 4294967295.0f;
+    }
 }
 
 std::vector<PlannedProp> PropPolygonPlacer::ComputePlacements(
     const std::vector<cS3DVector3>& polygonVertices,
     const float densityPer100Sqm,
+    const float densityVariation,
     const int32_t baseRotation,
     const bool randomRotation,
     cISTETerrain* terrain,
@@ -43,34 +66,54 @@ std::vector<PlannedProp> PropPolygonPlacer::ComputePlacements(
     }
 
     std::mt19937 rng(seed);
-    std::uniform_real_distribution<float> jitterDist(-0.4f, 0.4f);
+    const float clampedVariation = std::clamp(densityVariation, 0.0f, 1.0f);
+    const float patchCellSize = cellSize * (3.0f + 5.0f * clampedVariation);
+    const float jitterExtent = 0.4f + 0.2f * clampedVariation;
+    std::uniform_real_distribution<float> jitterDist(-jitterExtent, jitterExtent);
     std::uniform_int_distribution<int32_t> rotDist(0, 3);
 
     for (float x = minX; x <= maxX; x += cellSize) {
         for (float z = minZ; z <= maxZ; z += cellSize) {
-            const float px = x + jitterDist(rng) * cellSize;
-            const float pz = z + jitterDist(rng) * cellSize;
-            if (!PointInPolygon_(px, pz, polygonVertices)) {
-                continue;
+            size_t placementAttempts = 1;
+            if (clampedVariation > kEpsilon) {
+                const float patchNoise = PatchNoise_(x + 0.5f * cellSize, z + 0.5f * cellSize, patchCellSize, seed);
+                const float localDensityMultiplier = std::clamp(
+                    1.0f + ((patchNoise - 0.5f) * 1.6f * clampedVariation),
+                    0.2f,
+                    1.8f);
+                placementAttempts = static_cast<size_t>(localDensityMultiplier);
+                const float fractionalAttempt = localDensityMultiplier - static_cast<float>(placementAttempts);
+                std::bernoulli_distribution extraAttemptDist(fractionalAttempt);
+                if (extraAttemptDist(rng)) {
+                    ++placementAttempts;
+                }
             }
 
-            float py = 0.0f;
-            if (terrain) {
-                py = terrain->GetAltitude(px, pz);
-            }
-            else {
-                py = polygonVertices.front().fY;
-            }
+            for (size_t attempt = 0; attempt < placementAttempts; ++attempt) {
+                const float px = x + jitterDist(rng) * cellSize;
+                const float pz = z + jitterDist(rng) * cellSize;
+                if (!PointInPolygon_(px, pz, polygonVertices)) {
+                    continue;
+                }
 
-            const int32_t rotation = randomRotation ? rotDist(rng) : (baseRotation & 3);
-            result.push_back({
-                cS3DVector3(px, py, pz),
-                rotation,
-                picker ? picker->Pick() : singlePropID
-            });
+                float py = 0.0f;
+                if (terrain) {
+                    py = terrain->GetAltitude(px, pz);
+                }
+                else {
+                    py = polygonVertices.front().fY;
+                }
 
-            if (result.size() >= maxPlacements) {
-                return result;
+                const int32_t rotation = randomRotation ? rotDist(rng) : (baseRotation & 3);
+                result.push_back({
+                    cS3DVector3(px, py, pz),
+                    rotation,
+                    picker ? picker->Pick() : singlePropID
+                });
+
+                if (result.size() >= maxPlacements) {
+                    return result;
+                }
             }
         }
     }

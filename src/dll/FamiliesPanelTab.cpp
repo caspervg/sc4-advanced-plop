@@ -336,19 +336,6 @@ void FamiliesPanelTab::OnRender() {
         });
     }
 
-    // --- Density variation (user families only) ---
-    if (!selectedIsAuto) {
-        ImGui::Separator();
-        ImGui::TextUnformatted("Family Settings");
-        auto& mutableFamily = favorites_->GetUserFamilies()[userIndex];
-        if (ImGui::SliderFloat("Density variation", &mutableFamily.densityVariation, 0.0f, 1.0f, "%.2f")) {
-            favorites_->Save();
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("0 = uniform spacing, 1 = patchier distribution.");
-        }
-    }
-
     // --- Paint button ---
     ImGui::Separator();
     if (selectedFamily->entries.empty()) {
@@ -486,7 +473,6 @@ void FamiliesPanelTab::QueuePaintForSelectedFamily_() {
     pendingPaint_.familyName = family->name;
     pendingPaint_.settings = familyPaintDefaults_;
     pendingPaint_.settings.activePalette = family->entries;
-    pendingPaint_.settings.densityVariation = family->densityVariation;
     pendingPaint_.settings.randomSeed = 0;
     pendingPaint_.open = true;
 }
@@ -562,6 +548,10 @@ void FamiliesPanelTab::RenderPaintOptionsPopup_() {
         else if (pendingPaint_.settings.mode == PropPaintMode::Polygon) {
             ImGui::Separator();
             ImGui::SliderFloat("Density (/100 m^2)", &pendingPaint_.settings.densityPer100Sqm, 0.1f, 20.0f, "%.1f");
+            ImGui::SliderFloat("Density variation", &pendingPaint_.settings.densityVariation, 0.0f, 1.0f, "%.2f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("0 = uniform fill, 1 = patchier clusters and gaps.");
+            }
             ImGui::Checkbox("Random rotation", &pendingPaint_.settings.randomRotation);
             ImGui::TextWrapped("Click to add polygon vertices. Enter fills with props. Backspace removes the last vertex.");
         }
@@ -577,7 +567,6 @@ void FamiliesPanelTab::RenderPaintOptionsPopup_() {
         if (ImGui::Button("Cancel")) {
             familyPaintDefaults_ = pendingPaint_.settings;
             familyPaintDefaults_.activePalette.clear();
-            familyPaintDefaults_.densityVariation = 0.0f;
             familyPaintDefaults_.randomSeed = 0;
             ImGui::CloseCurrentPopup();
         }
@@ -605,7 +594,6 @@ bool FamiliesPanelTab::StartPaintingWithSelectedFamily_() {
 
     familyPaintDefaults_ = pendingPaint_.settings;
     familyPaintDefaults_.activePalette.clear();
-    familyPaintDefaults_.densityVariation = 0.0f;
     familyPaintDefaults_.randomSeed = 0;
 
     return director_->StartPropPainting(pendingPaint_.fallbackPropId, settings, pendingPaint_.familyName);

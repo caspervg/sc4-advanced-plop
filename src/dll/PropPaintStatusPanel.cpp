@@ -47,6 +47,7 @@ void PropPaintStatusPanel::OnRender() {
         ImGui::Text("Spacing: %.1fm", settings.spacingMeters);
     } else if (settings.mode == PropPaintMode::Polygon) {
         ImGui::Text("Density: %.1f/100m^2", settings.densityPer100Sqm);
+        ImGui::Text("Variation: %.2f", settings.densityVariation);
     }
 
     // Hotkey hints
@@ -57,6 +58,9 @@ void PropPaintStatusPanel::OnRender() {
     ImGui::TextUnformatted("Ctrl+Z undo group  Ctrl+Backspace undo prop");
     if (settings.mode == PropPaintMode::Line || settings.mode == PropPaintMode::Polygon) {
         ImGui::TextUnformatted("-/+ spacing/density");
+    }
+    if (settings.mode == PropPaintMode::Polygon) {
+        ImGui::TextUnformatted("Ctrl+-/+ variation");
     }
     ImGui::PopStyleColor();
 

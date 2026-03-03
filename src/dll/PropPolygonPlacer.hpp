@@ -13,6 +13,7 @@ public:
     static std::vector<PlannedProp> ComputePlacements(
         const std::vector<cS3DVector3>& polygonVertices,
         float densityPer100Sqm,
+        float densityVariation,
         int32_t baseRotation,
         bool randomRotation,
         cISTETerrain* terrain,

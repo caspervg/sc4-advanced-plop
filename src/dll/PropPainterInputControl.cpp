@@ -139,6 +139,7 @@ void PropPainterInputControl::SetPropToPaint(const uint32_t propID, const PropPa
     propIDToPaint_ = propID;
     settings_ = settings;
     settings_.deltaYMeters = ClampDeltaY(settings_.deltaYMeters);
+    settings_.densityVariation = std::clamp(settings_.densityVariation, 0.0f, 1.0f);
     if (settings_.randomSeed == 0) {
         settings_.randomSeed = static_cast<uint32_t>(GetTickCount64() ^ static_cast<uint64_t>(propIDToPaint_));
     }
@@ -435,14 +436,22 @@ bool PropPainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const u
 
     if (vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PLUS) {
         const float delta = (vkCode == VK_OEM_PLUS) ? 0.5f : -0.5f;
+        const bool controlHeld = (modifiers & MOD_CONTROL) != 0;
 
         if (state_ == ControlState::ActiveLine) {
             settings_.spacingMeters = std::clamp(settings_.spacingMeters + delta, 0.5f, 50.0f);
             LOG_INFO("Line spacing: {:.1f}m", settings_.spacingMeters);
         } else if (state_ == ControlState::ActivePolygon) {
-            settings_.densityPer100Sqm = std::clamp(settings_.densityPer100Sqm + delta, 0.1f, 20.0f);
+            if (controlHeld) {
+                const float variationDelta = (vkCode == VK_OEM_PLUS) ? 0.05f : -0.05f;
+                settings_.densityVariation = std::clamp(settings_.densityVariation + variationDelta, 0.0f, 1.0f);
+                LOG_INFO("Polygon density variation: {:.2f}", settings_.densityVariation);
+            }
+            else {
+                settings_.densityPer100Sqm = std::clamp(settings_.densityPer100Sqm + delta, 0.1f, 20.0f);
+                LOG_INFO("Polygon density: {:.1f}/100m^2", settings_.densityPer100Sqm);
+            }
             polygonPreviewDirty_ = true;
-            LOG_INFO("Polygon density: {:.1f}/100m^2", settings_.densityPer100Sqm);
         } else {
             return false;
         }
@@ -640,6 +649,7 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
         const auto placements = PropPolygonPlacer::ComputePlacements(
             points,
             std::max(settings_.densityPer100Sqm, 0.1f),
+            settings_.densityVariation,
             settings_.rotation,
             settings_.randomRotation,
             GetTerrain_(),
@@ -740,6 +750,7 @@ void PropPainterInputControl::ExecutePolygonPlacement_() {
     const auto placements = PropPolygonPlacer::ComputePlacements(
         polygonVertices,
         std::max(settings_.densityPer100Sqm, 0.1f),
+        settings_.densityVariation,
         settings_.rotation,
         settings_.randomRotation,
         GetTerrain_(),
