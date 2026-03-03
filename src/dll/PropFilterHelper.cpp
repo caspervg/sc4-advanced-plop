@@ -1,7 +1,8 @@
 #include "PropFilterHelper.hpp"
 
 #include <algorithm>
-#include <cctype>
+
+#include "Utils.hpp"
 
 bool PropFilterHelper::PassesFilters(const PropView& view) const {
     return PassesTextFilter_(view) && PassesSizeFilter_(view);
@@ -84,28 +85,8 @@ void PropFilterHelper::ResetFilters() {
 }
 
 bool PropFilterHelper::PassesTextFilter_(const PropView& view) const {
-    if (searchBuffer.empty()) {
-        return true;
-    }
-
-    std::string searchLower;
-    searchLower.reserve(searchBuffer.size());
-    std::ranges::transform(searchBuffer, std::back_inserter(searchLower),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    std::string nameLower;
-    nameLower.reserve(view.prop->visibleName.size());
-    std::ranges::transform(view.prop->visibleName, std::back_inserter(nameLower),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (nameLower.find(searchLower) != std::string::npos) {
-        return true;
-    }
-
-    std::string exemplarLower;
-    exemplarLower.reserve(view.prop->exemplarName.size());
-    std::ranges::transform(view.prop->exemplarName, std::back_inserter(exemplarLower),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return exemplarLower.find(searchLower) != std::string::npos;
+    return ContainsCaseInsensitive(view.prop->visibleName, searchBuffer) ||
+        ContainsCaseInsensitive(view.prop->exemplarName, searchBuffer);
 }
 
 bool PropFilterHelper::PassesSizeFilter_(const PropView& view) const {

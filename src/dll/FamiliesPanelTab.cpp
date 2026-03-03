@@ -10,22 +10,6 @@
 #include "rfl/visit.hpp"
 
 namespace {
-    std::string ToUpperCopy(const std::string& value) {
-        std::string normalized = value;
-        std::ranges::transform(normalized, normalized.begin(), [](const unsigned char c) {
-            return static_cast<char>(std::toupper(c));
-        });
-        return normalized;
-    }
-
-    bool ContainsCaseInsensitive(const std::string& text, const std::string& needle) {
-        if (needle.empty()) {
-            return true;
-        }
-
-        return ToUpperCopy(text).contains(ToUpperCopy(needle));
-    }
-
     std::string FormatFamilyId(const std::optional<uint32_t> familyId) {
         if (!familyId.has_value()) {
             return "-";

@@ -1,6 +1,7 @@
 #include "LotFilterHelper.hpp"
 #include <algorithm>
-#include <cctype>
+
+#include "Utils.hpp"
 
 bool LotFilterHelper::PassesFilters(const LotView& lot) const {
     return PassesTextFilter_(lot) &&
@@ -102,38 +103,11 @@ void LotFilterHelper::ResetFilters() {
 }
 
 bool LotFilterHelper::PassesTextFilter_(const LotView& view) const {
-    // If search buffer is empty, all lots pass
-    if (searchBuffer.empty()) {
-        return true;
-    }
     const Lot& lot = *view.lot;
     const Building& building = *view.building;
 
-    // Convert search term to lowercase for case-insensitive search (using std::transform)
-    std::string searchLower;
-    searchLower.reserve(searchBuffer.size());
-    std::ranges::transform(searchBuffer, std::back_inserter(searchLower),
-                           [](unsigned char c) { return std::tolower(c); });
-
-    // Convert lot name to lowercase and search
-    std::string lotNameLower;
-    lotNameLower.reserve(lot.name.size());
-    std::ranges::transform(lot.name, std::back_inserter(lotNameLower),
-                           [](unsigned char c) { return std::tolower(c); });
-    if (lotNameLower.find(searchLower) != std::string::npos) {
-        return true;
-    }
-
-    // Convert building name to lowercase and search
-    std::string buildingNameLower;
-    buildingNameLower.reserve(building.name.size());
-    std::ranges::transform(building.name, std::back_inserter(buildingNameLower),
-                           [](unsigned char c) { return std::tolower(c); });
-    if (buildingNameLower.find(searchLower) != std::string::npos) {
-        return true;
-    }
-
-    return false;
+    return ContainsCaseInsensitive(lot.name, searchBuffer) ||
+        ContainsCaseInsensitive(building.name, searchBuffer);
 }
 
 bool LotFilterHelper::PassesSizeFilter_(const LotView& view) const {
