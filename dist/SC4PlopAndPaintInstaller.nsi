@@ -166,14 +166,14 @@ Function ValidateRenderServicesDependency
   StrCpy $RenderServicesDllPath "$SC4PluginsDir\${RENDER_SERVICES_DLL_NAME}"
 
   ${IfNot} ${FileExists} "$RenderServicesDllPath"
-    MessageBox MB_OK|MB_ICONSTOP "${APP_NAME} requires SC4 Render Services to be installed first.$\r$\n$\r$\nCould not find '$RenderServicesDllPath'.$\r$\n$\r$\nPlease run the SC4 Render Services installer before continuing."
+    MessageBox MB_OK|MB_ICONSTOP "${APP_NAME} requires SC4RenderServices to be installed first.$\r$\n$\r$\nCould not find '$RenderServicesDllPath'.$\r$\n$\r$\nPlease install SC4RenderServices, then run this installer again.$\r$\n$\r$\nDownload page:$\r$\nhttps://community.simtropolis.com/files/file/37372-sc4-render-services/"
     Abort
   ${EndIf}
 
   ClearErrors
   GetDLLVersion "$RenderServicesDllPath" $0 $1
   ${If} ${Errors}
-    MessageBox MB_OK|MB_ICONSTOP "Could not read the version information from '$RenderServicesDllPath'.$\r$\n$\r$\nPlease reinstall SC4 Render Services before continuing."
+    MessageBox MB_OK|MB_ICONSTOP "Could not read the version information from '$RenderServicesDllPath'.$\r$\n$\r$\nPlease reinstall SC4RenderServices before continuing.$\r$\n$\r$\nProject page:$\r$\nhttps://github.com/caspervg/sc4-render-services"
     Abort
   ${EndIf}
 
@@ -198,7 +198,7 @@ Function ValidateRenderServicesDependency
   ${EndIf}
 
   ${If} $6 != "1"
-    MessageBox MB_OK|MB_ICONSTOP "Unsupported SC4 Render Services version detected in '$RenderServicesDllPath'.$\r$\n$\r$\nFound: $2.$3.$4.$5$\r$\nRequired: ${MIN_RENDER_SERVICES_VERSION_MAJOR}.${MIN_RENDER_SERVICES_VERSION_MINOR}.${MIN_RENDER_SERVICES_VERSION_BUILD}.x or newer$\r$\n$\r$\nPlease update SC4 Render Services before continuing."
+    MessageBox MB_OK|MB_ICONSTOP "Unsupported SC4RenderServices version detected in '$RenderServicesDllPath'.$\r$\n$\r$\nFound: $2.$3.$4.$5$\r$\nRequired: ${MIN_RENDER_SERVICES_VERSION_MAJOR}.${MIN_RENDER_SERVICES_VERSION_MINOR}.${MIN_RENDER_SERVICES_VERSION_BUILD}.x or newer$\r$\n$\r$\nPlease update SC4RenderServices before continuing.$\r$\n$\r$\nProject page:$\r$\nhttps://github.com/caspervg/sc4-render-services"
     Abort
   ${EndIf}
 FunctionEnd
