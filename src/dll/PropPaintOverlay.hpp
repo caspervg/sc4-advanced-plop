@@ -74,14 +74,21 @@ private:
         DWORD zWriteEnable = 0;
         DWORD lighting = 0;
         DWORD alphaBlend = 0;
+        DWORD alphaTest = 0;
         DWORD cullMode = 0;
+        DWORD fogEnable = 0;
         DWORD zBias = 0;
         DWORD srcBlend = 0;
         DWORD dstBlend = 0;
         DWORD colorOp = 0;
         DWORD colorArg1 = 0;
+        DWORD colorArg2 = 0;
         DWORD alphaOp = 0;
         DWORD alphaArg1 = 0;
+        DWORD alphaArg2 = 0;
+        DWORD stage1ColorOp = 0;
+        DWORD stage1AlphaOp = 0;
+        IDirectDrawSurface7* texture0 = nullptr;
     };
 
     void SetupRenderState_(IDirect3DDevice7* device);

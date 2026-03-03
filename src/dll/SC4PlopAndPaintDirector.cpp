@@ -79,6 +79,8 @@ bool SC4PlopAndPaintDirector::PostAppInit() {
 
     LOG_INFO("SC4AdvancedLotPlopDirector initialized");
     LOG_INFO("Using settings file: {}", settingsPath.string());
+    LOG_INFO("Applied logging settings: level={}, file={}",
+             spdlog::level::to_string_view(settings.GetLogLevel()), settings.GetLogToFile());
 
     cIGZMessageServer2Ptr pMS2;
     if (pMS2) {

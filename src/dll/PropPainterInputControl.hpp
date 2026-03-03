@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,7 @@ struct PropPaintSettings {
 };
 
 class PropRepository;
+class WeightedPropPicker;
 
 class PropPainterInputControl : public cSC4BaseViewInputControl {
 public:
@@ -110,6 +112,9 @@ private:
     [[nodiscard]] cS3DVector3 SnapWorldToGrid_(const cS3DVector3& position) const;
     void SnapPlacementToGrid_(PlannedProp& placement) const;
     void ClearCollectedPoints_();
+    void ResetDirectPaintPicker_();
+    [[nodiscard]] uint32_t CurrentDirectPropID_() const;
+    void AdvanceDirectPaintProp_();
     void RebuildPreviewOverlay_();
     void ExecuteLinePlacement_();
     void ExecutePolygonPlacement_();
@@ -131,7 +136,9 @@ private:
     ControlState state_ = ControlState::Uninitialized;
 
     uint32_t propIDToPaint_;
+    uint32_t directPaintPropID_ = 0;
     PropPaintSettings settings_{};
+    std::unique_ptr<WeightedPropPicker> directPaintPicker_{};
     cIGZS3DCameraService* cameraService_ = nullptr;
     const PropRepository* propRepository_ = nullptr;
     std::function<void()> onCancel_{};
@@ -151,6 +158,7 @@ private:
     bool cursorValid_ = false;
     cRZAutoRefCount<cISC4PropOccupant> previewProp_{};
     cRZAutoRefCount<cISC4Occupant> previewOccupant_{};
+    uint32_t previewPropID_ = 0;
     bool previewActive_ = false;
     bool previewPositionValid_ = false;
     cS3DVector3 lastPreviewPosition_{};

@@ -131,6 +131,7 @@ void PropPainterInputControl::SetPropToPaint(const uint32_t propID, const PropPa
     if (settings_.randomSeed == 0) {
         settings_.randomSeed = static_cast<uint32_t>(GetTickCount64() ^ static_cast<uint64_t>(propIDToPaint_));
     }
+    ResetDirectPaintPicker_();
     LOG_INFO("Setting prop to paint: {} (0x{:08X}), rotation: {}", name, propID, settings.rotation);
 
     if (targetChanged) {
@@ -260,6 +261,9 @@ void PropPainterInputControl::TransitionTo_(const ControlState newState, const c
 
 void PropPainterInputControl::SyncPreviewForState_() {
     if (ShouldShowModelPreview_()) {
+        if (previewProp_ && previewPropID_ != CurrentDirectPropID_()) {
+            DestroyPreviewProp_();
+        }
         if (!previewProp_) {
             CreatePreviewProp_();
         }
@@ -435,6 +439,37 @@ void PropPainterInputControl::ClearCollectedPoints_() {
     overlay_.Clear();
 }
 
+void PropPainterInputControl::ResetDirectPaintPicker_() {
+    directPaintPicker_.reset();
+    directPaintPropID_ = propIDToPaint_;
+
+    if (settings_.activePalette.empty()) {
+        return;
+    }
+
+    directPaintPicker_ = std::make_unique<WeightedPropPicker>(settings_.activePalette, settings_.randomSeed);
+    directPaintPropID_ = directPaintPicker_->Pick();
+    if (directPaintPropID_ == 0) {
+        directPaintPropID_ = propIDToPaint_;
+    }
+}
+
+uint32_t PropPainterInputControl::CurrentDirectPropID_() const {
+    return directPaintPropID_ != 0 ? directPaintPropID_ : propIDToPaint_;
+}
+
+void PropPainterInputControl::AdvanceDirectPaintProp_() {
+    if (!directPaintPicker_) {
+        directPaintPropID_ = propIDToPaint_;
+        return;
+    }
+
+    directPaintPropID_ = directPaintPicker_->Pick();
+    if (directPaintPropID_ == 0) {
+        directPaintPropID_ = propIDToPaint_;
+    }
+}
+
 void PropPainterInputControl::RebuildPreviewOverlay_() {
     if (!ShouldShowOutlinePreview_()) {
         overlay_.Clear();
@@ -453,10 +488,10 @@ void PropPainterInputControl::RebuildPreviewOverlay_() {
         previewPlacement.placement.position = overlayCursor;
         previewPlacement.placement.position.fY += settings_.deltaYMeters;
         previewPlacement.placement.rotation = settings_.rotation;
-        previewPlacement.placement.propID = propIDToPaint_;
+        previewPlacement.placement.propID = CurrentDirectPropID_();
 
         if (hasOverlayCursor && propRepository_) {
-            if (const Prop* prop = propRepository_->FindPropByInstanceId(propIDToPaint_)) {
+            if (const Prop* prop = propRepository_->FindPropByInstanceId(previewPlacement.placement.propID)) {
                 PopulatePreviewBounds(previewPlacement, *prop);
             }
         }
@@ -783,7 +818,12 @@ bool PropPainterInputControl::PlacePropAt_(const int32_t screenX, const int32_t 
     }
     targetPosition.fY += settings_.deltaYMeters;
 
-    return PlacePropAtWorld_(targetPosition, settings_.rotation, propIDToPaint_);
+    const bool placed = PlacePropAtWorld_(targetPosition, settings_.rotation, CurrentDirectPropID_());
+    if (placed) {
+        AdvanceDirectPaintProp_();
+        SyncPreviewForState_();
+    }
+    return placed;
 }
 
 bool PropPainterInputControl::PlacePropAtWorld_(const cS3DVector3& position, const int32_t rotation,
@@ -887,7 +927,8 @@ void PropPainterInputControl::CreatePreviewProp_() {
         return;
     }
 
-    if (propIDToPaint_ == 0) {
+    const uint32_t previewPropID = CurrentDirectPropID_();
+    if (previewPropID == 0) {
         LOG_WARN("Cannot create preview prop: no target prop selected");
         return;
     }
@@ -897,7 +938,7 @@ void PropPainterInputControl::CreatePreviewProp_() {
     }
 
     cISC4PropOccupant* prop = nullptr;
-    if (!propManager_->CreateProp(propIDToPaint_, prop)) {
+    if (!propManager_->CreateProp(previewPropID, prop)) {
         LOG_WARN("Failed to create prop for preview");
         return;
     }
@@ -937,6 +978,7 @@ void PropPainterInputControl::CreatePreviewProp_() {
 
     previewProp_ = std::move(previewProp);
     previewOccupant_ = std::move(previewOccupant);
+    previewPropID_ = previewPropID;
     previewActive_ = true;
     LOG_INFO("Created preview prop");
 }
@@ -955,6 +997,7 @@ void PropPainterInputControl::DestroyPreviewProp_() {
 
     previewOccupant_.Reset();
     previewProp_.Reset();
+    previewPropID_ = 0;
     previewActive_ = false;
     previewPositionValid_ = false;
     LOG_INFO("Destroyed preview prop");

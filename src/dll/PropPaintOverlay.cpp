@@ -272,32 +272,50 @@ void PropPaintOverlay::Draw(IDirect3DDevice7* device, const bool drawGrid) {
 }
 
 void PropPaintOverlay::SetupRenderState_(IDirect3DDevice7* device) {
+    if (savedState_.texture0) {
+        savedState_.texture0->Release();
+        savedState_.texture0 = nullptr;
+    }
+
     device->GetRenderState(D3DRENDERSTATE_ZENABLE, &savedState_.zEnable);
     device->GetRenderState(D3DRENDERSTATE_ZWRITEENABLE, &savedState_.zWriteEnable);
     device->GetRenderState(D3DRENDERSTATE_LIGHTING, &savedState_.lighting);
     device->GetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, &savedState_.alphaBlend);
+    device->GetRenderState(D3DRENDERSTATE_ALPHATESTENABLE, &savedState_.alphaTest);
     device->GetRenderState(D3DRENDERSTATE_CULLMODE, &savedState_.cullMode);
+    device->GetRenderState(D3DRENDERSTATE_FOGENABLE, &savedState_.fogEnable);
     device->GetRenderState(D3DRENDERSTATE_ZBIAS, &savedState_.zBias);
     device->GetRenderState(D3DRENDERSTATE_SRCBLEND, &savedState_.srcBlend);
     device->GetRenderState(D3DRENDERSTATE_DESTBLEND, &savedState_.dstBlend);
     device->GetTextureStageState(0, D3DTSS_COLOROP, &savedState_.colorOp);
     device->GetTextureStageState(0, D3DTSS_COLORARG1, &savedState_.colorArg1);
+    device->GetTextureStageState(0, D3DTSS_COLORARG2, &savedState_.colorArg2);
     device->GetTextureStageState(0, D3DTSS_ALPHAOP, &savedState_.alphaOp);
     device->GetTextureStageState(0, D3DTSS_ALPHAARG1, &savedState_.alphaArg1);
+    device->GetTextureStageState(0, D3DTSS_ALPHAARG2, &savedState_.alphaArg2);
+    device->GetTextureStageState(1, D3DTSS_COLOROP, &savedState_.stage1ColorOp);
+    device->GetTextureStageState(1, D3DTSS_ALPHAOP, &savedState_.stage1AlphaOp);
+    device->GetTexture(0, &savedState_.texture0);
 
     device->SetRenderState(D3DRENDERSTATE_ZENABLE, TRUE);
     device->SetRenderState(D3DRENDERSTATE_ZWRITEENABLE, FALSE);
     device->SetRenderState(D3DRENDERSTATE_LIGHTING, FALSE);
     device->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRENDERSTATE_ALPHATESTENABLE, FALSE);
     device->SetRenderState(D3DRENDERSTATE_SRCBLEND, D3DBLEND_SRCALPHA);
     device->SetRenderState(D3DRENDERSTATE_DESTBLEND, D3DBLEND_INVSRCALPHA);
     device->SetRenderState(D3DRENDERSTATE_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRENDERSTATE_FOGENABLE, FALSE);
     device->SetRenderState(D3DRENDERSTATE_ZBIAS, 8);
     device->SetTexture(0, nullptr);
     device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
     device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_CURRENT);
     device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
     device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_CURRENT);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    device->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
 }
 
 void PropPaintOverlay::RestoreRenderState_(IDirect3DDevice7* device) {
@@ -305,14 +323,25 @@ void PropPaintOverlay::RestoreRenderState_(IDirect3DDevice7* device) {
     device->SetRenderState(D3DRENDERSTATE_ZWRITEENABLE, savedState_.zWriteEnable);
     device->SetRenderState(D3DRENDERSTATE_LIGHTING, savedState_.lighting);
     device->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, savedState_.alphaBlend);
+    device->SetRenderState(D3DRENDERSTATE_ALPHATESTENABLE, savedState_.alphaTest);
     device->SetRenderState(D3DRENDERSTATE_CULLMODE, savedState_.cullMode);
+    device->SetRenderState(D3DRENDERSTATE_FOGENABLE, savedState_.fogEnable);
     device->SetRenderState(D3DRENDERSTATE_ZBIAS, savedState_.zBias);
     device->SetRenderState(D3DRENDERSTATE_SRCBLEND, savedState_.srcBlend);
     device->SetRenderState(D3DRENDERSTATE_DESTBLEND, savedState_.dstBlend);
+    device->SetTexture(0, savedState_.texture0);
     device->SetTextureStageState(0, D3DTSS_COLOROP, savedState_.colorOp);
     device->SetTextureStageState(0, D3DTSS_COLORARG1, savedState_.colorArg1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG2, savedState_.colorArg2);
     device->SetTextureStageState(0, D3DTSS_ALPHAOP, savedState_.alphaOp);
     device->SetTextureStageState(0, D3DTSS_ALPHAARG1, savedState_.alphaArg1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG2, savedState_.alphaArg2);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, savedState_.stage1ColorOp);
+    device->SetTextureStageState(1, D3DTSS_ALPHAOP, savedState_.stage1AlphaOp);
+    if (savedState_.texture0) {
+        savedState_.texture0->Release();
+        savedState_.texture0 = nullptr;
+    }
 }
 
 void PropPaintOverlay::EmitLine_(const cS3DVector3& a, const cS3DVector3& b,
@@ -484,25 +513,25 @@ void PropPaintOverlay::EmitPreviewPlacement_(const PreviewPlacement& preview, cI
     EmitLine_(baseC, topC, kLineThickness * 0.45f, kPlannedMarkerColor, layer);
     EmitLine_(baseD, topD, kLineThickness * 0.45f, kPlannedMarkerColor, layer);
 
-    // Direction arrow on the top face: shaft from mid(A,B) toward mid(C,D), with barbs at the tip.
+    // Direction arrow on the top face: shaft from mid(C,D) toward mid(A,B), with barbs at the tip.
     const auto midAB = cS3DVector3((topA.fX + topB.fX) * 0.5f, (topA.fY + topB.fY) * 0.5f, (topA.fZ + topB.fZ) * 0.5f);
     const auto midCD = cS3DVector3((topC.fX + topD.fX) * 0.5f, (topC.fY + topD.fY) * 0.5f, (topC.fZ + topD.fZ) * 0.5f);
     const float arrowInset = 0.25f;
     const auto tail = cS3DVector3(
-        midAB.fX + (midCD.fX - midAB.fX) * arrowInset, midAB.fY + (midCD.fY - midAB.fY) * arrowInset,
-        midAB.fZ + (midCD.fZ - midAB.fZ) * arrowInset);
+        midCD.fX + (midAB.fX - midCD.fX) * arrowInset, midCD.fY + (midAB.fY - midCD.fY) * arrowInset,
+        midCD.fZ + (midAB.fZ - midCD.fZ) * arrowInset);
     const auto tip = cS3DVector3(
-        midAB.fX + (midCD.fX - midAB.fX) * (1.0f - arrowInset), midAB.fY + (midCD.fY - midAB.fY) * (1.0f - arrowInset),
-        midAB.fZ + (midCD.fZ - midAB.fZ) * (1.0f - arrowInset));
+        midCD.fX + (midAB.fX - midCD.fX) * (1.0f - arrowInset), midCD.fY + (midAB.fY - midCD.fY) * (1.0f - arrowInset),
+        midCD.fZ + (midAB.fZ - midCD.fZ) * (1.0f - arrowInset));
 
-    // Barbs: two lines from the tip angled back toward the left/right top edges.
+    // Barbs: two lines from the tip angled back toward the far left/right top edges.
     const float barbT = 0.3f;
     const auto barbLeft = cS3DVector3(
-        tip.fX + (topA.fX - tip.fX) * barbT, tip.fY + (topA.fY - tip.fY) * barbT,
-        tip.fZ + (topA.fZ - tip.fZ) * barbT);
+        tip.fX + (topD.fX - tip.fX) * barbT, tip.fY + (topD.fY - tip.fY) * barbT,
+        tip.fZ + (topD.fZ - tip.fZ) * barbT);
     const auto barbRight = cS3DVector3(
-        tip.fX + (topB.fX - tip.fX) * barbT, tip.fY + (topB.fY - tip.fY) * barbT,
-        tip.fZ + (topB.fZ - tip.fZ) * barbT);
+        tip.fX + (topC.fX - tip.fX) * barbT, tip.fY + (topC.fY - tip.fY) * barbT,
+        tip.fZ + (topC.fZ - tip.fZ) * barbT);
 
     constexpr DWORD kArrowColor = 0xD0FFFFFF;
     EmitLine_(tail, tip, kLineThickness * 0.5f, kArrowColor, layer);
