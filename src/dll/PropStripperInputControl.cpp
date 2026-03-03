@@ -312,7 +312,10 @@ void PropStripperInputControl::DeleteHoveredProp_() {
     cRZAutoRefCount<cISC4PropOccupant> propRef(propOccupant);
 
     cS3DVector3 pos{};
-    hoveredOccupant_->GetPosition(&pos);
+    if (!hoveredOccupant_->GetPosition(&pos)) {
+        LOG_WARN("PropStripperInputControl: Failed to get position before removal");
+        return;
+    }
     const uint32_t propType = propOccupant->GetPropType();
     const int32_t orientation = propOccupant->GetOrientation();
 
