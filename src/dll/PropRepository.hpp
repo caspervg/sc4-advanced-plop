@@ -24,6 +24,7 @@ private:
 
     std::vector<Prop> props_;
     std::unordered_map<uint64_t, const Prop*> propsById_;
+    std::unordered_map<uint32_t, const Prop*> propsByInstanceId_;
     std::unordered_map<uint32_t, std::string> propFamilyNames_;
     std::vector<PropFamilyInfo> propFamilyInfos_;
     std::vector<PropFamily> autoFamilies_;

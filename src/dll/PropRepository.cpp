@@ -20,6 +20,7 @@ void PropRepository::Load() {
 
         props_.clear();
         propsById_.clear();
+        propsByInstanceId_.clear();
         propFamilyNames_.clear();
         propFamilyInfos_.clear();
         autoFamilies_.clear();
@@ -49,18 +50,20 @@ void PropRepository::Load() {
 }
 
 const Prop* PropRepository::FindPropByInstanceId(const uint32_t instanceId) const {
-    for (const auto& prop : props_) {
-        if (prop.instanceId.value() == instanceId) {
-            return &prop;
-        }
+    const auto it = propsByInstanceId_.find(instanceId);
+    if (it != propsByInstanceId_.end()) {
+        return it->second;
     }
+
     return nullptr;
 }
 
 void PropRepository::RebuildIndexes_() {
     propsById_ = std::unordered_map<uint64_t, const Prop*>(props_.size());
+    propsByInstanceId_ = std::unordered_map<uint32_t, const Prop*>(props_.size());
     for (const auto& p : props_) {
         propsById_.emplace((static_cast<uint64_t>(p.groupId.value()) << 32) | p.instanceId.value(), &p);
+        propsByInstanceId_.try_emplace(p.instanceId.value(), &p);
     }
 }
 
