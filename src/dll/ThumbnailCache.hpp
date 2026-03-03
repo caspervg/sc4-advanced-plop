@@ -65,8 +65,8 @@ public:
     }
 
     void Request(const KeyType& key) {
-        // Don't request if already in cache or pending
-        if (cache_.contains(key) || loading_.contains(key)) {
+        // Don't request if already in cache, pending, or known to fail.
+        if (cache_.contains(key) || loading_.contains(key) || failed_.contains(key)) {
             return;
         }
         loadQueue_.push_back(key);
@@ -78,6 +78,7 @@ public:
         lruList_.clear();
         loadQueue_.clear();
         loading_.clear();
+        failed_.clear();
     }
 
     [[nodiscard]] size_t Size() const {
@@ -107,8 +108,10 @@ public:
 
             ImGuiTexture texture = loader(key);
             if (texture.GetID() != nullptr) {
+                failed_.erase(key);
                 Insert(key, std::move(texture));
             } else {
+                failed_.insert(key);
                 LOG_WARN("Loading texture for {} failed", key);
             }
             loaded += 1;
@@ -132,4 +135,5 @@ private:
     std::unordered_map<KeyType, CacheEntry> cache_;
     std::list<KeyType> loadQueue_;
     std::unordered_set<KeyType> loading_;
+    std::unordered_set<KeyType> failed_;
 };
