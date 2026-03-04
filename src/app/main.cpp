@@ -457,6 +457,7 @@ namespace {
 int main(int argc, char* argv[]) {
     try {
         auto logger = spdlog::stdout_color_mt("lotplop-cli");
+        spdlog::set_default_logger(logger);
         logger->set_level(spdlog::level::debug);
         spdlog::set_pattern("[%H:%M:%S] [%^%l%$] %v");
         logger->info("SC4PlopAndPaint CLI {}", SC4_PLOP_AND_PAINT_VERSION);

@@ -8,6 +8,9 @@
 inline bool operator==(const Lot& lhs, const Lot& rhs);
 inline bool operator==(const FamilyEntry& lhs, const FamilyEntry& rhs);
 inline bool operator==(const PropFamily& lhs, const PropFamily& rhs);
+inline bool operator==(const PropTimeOfDay& lhs, const PropTimeOfDay& rhs);
+inline bool operator==(const SimulatorDateStart& lhs, const SimulatorDateStart& rhs);
+inline bool operator==(const Prop& lhs, const Prop& rhs);
 
 // Helper function to compare Icon structs
 inline bool operator==(const Icon& lhs, const Icon& rhs) {
@@ -56,6 +59,39 @@ inline bool operator==(const PropFamily& lhs, const PropFamily& rhs) {
     return lhs.name == rhs.name &&
            lhs.entries == rhs.entries &&
            lhs.densityVariation == rhs.densityVariation;
+}
+
+inline bool operator==(const PropTimeOfDay& lhs, const PropTimeOfDay& rhs) {
+    return lhs.startHour == rhs.startHour &&
+           lhs.endHour == rhs.endHour;
+}
+
+inline bool operator==(const SimulatorDateStart& lhs, const SimulatorDateStart& rhs) {
+    return lhs.month == rhs.month &&
+           lhs.day == rhs.day;
+}
+
+inline bool operator==(const Prop& lhs, const Prop& rhs) {
+    return lhs.groupId.value() == rhs.groupId.value() &&
+           lhs.instanceId.value() == rhs.instanceId.value() &&
+           lhs.exemplarName == rhs.exemplarName &&
+           lhs.visibleName == rhs.visibleName &&
+           lhs.width == rhs.width &&
+           lhs.height == rhs.height &&
+           lhs.depth == rhs.depth &&
+           lhs.minX == rhs.minX &&
+           lhs.maxX == rhs.maxX &&
+           lhs.minY == rhs.minY &&
+           lhs.maxY == rhs.maxY &&
+           lhs.minZ == rhs.minZ &&
+           lhs.maxZ == rhs.maxZ &&
+           lhs.familyIds == rhs.familyIds &&
+           lhs.nighttimeStateChange == rhs.nighttimeStateChange &&
+           lhs.timeOfDay == rhs.timeOfDay &&
+           lhs.simulatorDateStart == rhs.simulatorDateStart &&
+           lhs.simulatorDateDuration == rhs.simulatorDateDuration &&
+           lhs.simulatorDateInterval == rhs.simulatorDateInterval &&
+           lhs.thumbnail == rhs.thumbnail;
 }
 
 // Helper function to compare TabFavorites structs
@@ -195,6 +231,38 @@ TEST_CASE("Lot CBOR serialization and deserialization", "[cbor][lot]") {
     REQUIRE(!cbor_bytes.empty());
 
     auto deserialized = rfl::cbor::read<Lot>(cbor_bytes);
+    REQUIRE(deserialized);
+    REQUIRE(*deserialized == original);
+}
+
+TEST_CASE("Prop CBOR serialization and deserialization with timed metadata", "[cbor][prop]") {
+    Prop original{
+        .groupId = rfl::Hex<uint32_t>(0x11223344),
+        .instanceId = rfl::Hex<uint32_t>(0x55667788),
+        .exemplarName = "Timed Prop",
+        .visibleName = "Timed Prop Visible",
+        .width = 3.5f,
+        .height = 5.25f,
+        .depth = 2.0f,
+        .minX = -1.75f,
+        .maxX = 1.75f,
+        .minY = 0.0f,
+        .maxY = 5.25f,
+        .minZ = -1.0f,
+        .maxZ = 1.0f,
+        .familyIds = {rfl::Hex<uint32_t>(0xAABBCCDD)},
+        .nighttimeStateChange = true,
+        .timeOfDay = PropTimeOfDay{6.0f, 18.5f},
+        .simulatorDateStart = SimulatorDateStart{4, 15},
+        .simulatorDateDuration = 120,
+        .simulatorDateInterval = 365,
+        .thumbnail = std::nullopt
+    };
+
+    auto cbor_bytes = rfl::cbor::write(original);
+    REQUIRE(!cbor_bytes.empty());
+
+    auto deserialized = rfl::cbor::read<Prop>(cbor_bytes);
     REQUIRE(deserialized);
     REQUIRE(*deserialized == original);
 }

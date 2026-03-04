@@ -7,6 +7,33 @@
 #include "rfl/visit.hpp"
 #include "utils/Logger.h"
 
+namespace {
+    const char* MonthName_(uint8_t month) {
+        static constexpr const char* kMonths[] = {
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        };
+
+        if (month >= 1 && month <= 12) {
+            return kMonths[month - 1];
+        }
+
+        return "Unknown";
+    }
+
+    void FormatHour_(const float hourValue, char* buffer, const size_t bufferSize) {
+        int totalMinutes = static_cast<int>(hourValue * 60.0f + 0.5f);
+        totalMinutes %= 24 * 60;
+        if (totalMinutes < 0) {
+            totalMinutes += 24 * 60;
+        }
+
+        const int hours = totalMinutes / 60;
+        const int minutes = totalMinutes % 60;
+        std::snprintf(buffer, bufferSize, "%02d:%02d", hours, minutes);
+    }
+}
+
 const char* PropPanelTab::GetTabName() const {
     return "Props";
 }
@@ -267,29 +294,20 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
 
                 // Name
                 ImGui::TableNextColumn();
+                bool showPropTooltip = false;
                 if (prop.visibleName.empty()) {
                     ImGui::TextUnformatted(prop.exemplarName.c_str());
+                    showPropTooltip = ImGui::IsItemHovered();
                 }
                 else {
                     ImGui::TextUnformatted(prop.visibleName.c_str());
+                    showPropTooltip = ImGui::IsItemHovered();
                     ImGui::TextDisabled("%s", prop.exemplarName.c_str());
+                    showPropTooltip = showPropTooltip || ImGui::IsItemHovered();
                 }
 
-                if (!prop.familyIds.empty() && ImGui::IsItemHovered()) {
-                    const auto& familyNames = props_->GetPropFamilyNames();
-                    ImGui::BeginTooltip();
-                    ImGui::Text("Families (%zu)", prop.familyIds.size());
-                    for (const auto& familyIdHex : prop.familyIds) {
-                        const uint32_t familyId = familyIdHex.value();
-                        const auto it = familyNames.find(familyId);
-                        if (it != familyNames.end()) {
-                            ImGui::Text("0x%08X  %s", familyId, it->second.c_str());
-                        }
-                        else {
-                            ImGui::Text("0x%08X", familyId);
-                        }
-                    }
-                    ImGui::EndTooltip();
+                if (showPropTooltip && HasPropTooltipContent_(prop)) {
+                    RenderPropTooltip_(prop);
                 }
 
                 // Size
@@ -366,13 +384,89 @@ void PropPanelTab::RenderFavButton_(const Prop& prop) const {
     }
 }
 
+bool PropPanelTab::HasPropTooltipContent_(const Prop& prop) const {
+    return !prop.familyIds.empty() ||
+        prop.nighttimeStateChange.has_value() ||
+        prop.timeOfDay.has_value() ||
+        prop.simulatorDateStart.has_value() ||
+        prop.simulatorDateDuration.has_value() ||
+        prop.simulatorDateInterval.has_value();
+}
+
+void PropPanelTab::RenderPropTooltip_(const Prop& prop) const {
+    ImGui::BeginTooltip();
+
+    if (!prop.familyIds.empty()) {
+        const auto& familyNames = props_->GetPropFamilyNames();
+        ImGui::Text("Member of %zu famil%s", prop.familyIds.size(), prop.familyIds.size() == 1 ? "y" : "ies");
+        for (const auto& familyIdHex : prop.familyIds) {
+            const uint32_t familyId = familyIdHex.value();
+            const auto it = familyNames.find(familyId);
+            if (it != familyNames.end()) {
+                ImGui::BulletText("%s (0x%08X)", it->second.c_str(), familyId);
+            }
+            else {
+                ImGui::BulletText("0x%08X", familyId);
+            }
+        }
+    }
+
+    const bool hasTimedData =
+        prop.nighttimeStateChange.has_value() ||
+        prop.timeOfDay.has_value() ||
+        prop.simulatorDateStart.has_value() ||
+        prop.simulatorDateDuration.has_value() ||
+        prop.simulatorDateInterval.has_value();
+
+    if (hasTimedData) {
+        if (!prop.familyIds.empty()) {
+            ImGui::Separator();
+        }
+
+        ImGui::TextUnformatted("Timed behavior");
+
+        if (prop.nighttimeStateChange.has_value()) {
+            ImGui::BulletText("Has separate day and night states: %s",
+                              *prop.nighttimeStateChange ? "Yes" : "No");
+        }
+
+        if (prop.timeOfDay.has_value()) {
+            char startBuffer[6]{};
+            char endBuffer[6]{};
+            FormatHour_(prop.timeOfDay->startHour, startBuffer, sizeof(startBuffer));
+            FormatHour_(prop.timeOfDay->endHour, endBuffer, sizeof(endBuffer));
+            ImGui::BulletText("Visible between %s and %s", startBuffer, endBuffer);
+        }
+
+        if (prop.simulatorDateStart.has_value()) {
+            ImGui::BulletText("Starts on %s %u",
+                              MonthName_(prop.simulatorDateStart->month),
+                              static_cast<unsigned>(prop.simulatorDateStart->day));
+        }
+
+        if (prop.simulatorDateDuration.has_value()) {
+            ImGui::BulletText("Stays active for %u day%s",
+                              *prop.simulatorDateDuration,
+                              *prop.simulatorDateDuration == 1 ? "" : "s");
+        }
+
+        if (prop.simulatorDateInterval.has_value()) {
+            ImGui::BulletText("Repeats every %u day%s",
+                              *prop.simulatorDateInterval,
+                              *prop.simulatorDateInterval == 1 ? "" : "s");
+        }
+    }
+
+    ImGui::EndTooltip();
+}
+
 void PropPanelTab::RenderRotationModal_() {
     if (pendingPaint_.open) {
-        ImGui::OpenPopup("Prop Paint Options");
+        ImGui::OpenPopup("Prop Painter");
         pendingPaint_.open = false;
     }
 
-    if (ImGui::BeginPopupModal("Prop Paint Options", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("Prop Painter", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Prop: %s", pendingPaint_.propName.c_str());
         ImGui::Separator();
 

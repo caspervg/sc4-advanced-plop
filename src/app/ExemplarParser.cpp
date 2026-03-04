@@ -2,8 +2,8 @@
 #include "LTextReader.h"
 #include "ThumbnailRenderer.hpp"
 
-#include <charconv>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -60,13 +60,13 @@ namespace {
 
         const auto data = indexService->loadEntryData(tgi);
         if (!data || data->empty()) {
-            spdlog::debug("Failed to load localized text {}: no data", tgi.ToString());
+            spdlog::trace("Failed to load localized text {}: no data", tgi.ToString());
             return std::nullopt;
         }
 
         auto parsed = LText::Parse(std::span(data->data(), data->size()));
         if (!parsed.has_value()) {
-            spdlog::debug("Failed to parse LText {}: {}", tgi.ToString(), parsed.error().message);
+            spdlog::trace("Failed to parse LText {}: {}", tgi.ToString(), parsed.error().message);
             return std::nullopt;
         }
 
@@ -75,7 +75,7 @@ namespace {
             return std::nullopt;
         }
         else {
-            spdlog::debug("Loaded localized text {}: {}", tgi.ToString(), text);
+            spdlog::trace("Loaded localized text {}: {}", tgi.ToString(), text);
         }
 
         return text;
@@ -85,11 +85,11 @@ namespace {
         DecodedImage result;
 
         if (pngData.empty()) {
-            spdlog::debug("decodePngToRgba32: empty pngData");
+            spdlog::trace("decodePngToRgba32: empty pngData");
             return result;
         }
 
-        spdlog::debug("decodePngToRgba32: attempting to decode {} bytes", pngData.size());
+        spdlog::trace("decodePngToRgba32: attempting to decode {} bytes", pngData.size());
 
         int width, height, channels;
         unsigned char* pixels = stbi_load_from_memory(
@@ -103,11 +103,11 @@ namespace {
             return result;
         }
 
-        spdlog::debug("decodePngToRgba32: decoded {}x{} image with {} channels", width, height, channels);
+        spdlog::trace("decodePngToRgba32: decoded {}x{} image with {} channels", width, height, channels);
 
         // Check if image is wide enough to have the second icon
         if (static_cast<uint32_t>(width) < kIconSkipWidth + kIconCropWidth) {
-            spdlog::debug("decodePngToRgba32: image too narrow ({}px), need at least {}px",
+            spdlog::trace("decodePngToRgba32: image too narrow ({}px), need at least {}px",
                           width, kIconSkipWidth + kIconCropWidth);
             stbi_image_free(pixels);
             return result;
@@ -164,6 +164,11 @@ ExemplarParser::ExemplarParser(const PropertyMapper& mapper,
       , pidLotConfigWealthType_(mapper.propertyId(kLotConfigWealthType))
       , pidLotConfigPurposeType_(mapper.propertyId(kLotConfigPurposeType))
       , pidOccupantSize_(mapper.propertyId(kOccupantSize))
+      , pidNighttimeStateChange_(mapper.propertyId(kNighttimeStateChange))
+      , pidPropTimeOfDay_(mapper.propertyId(kPropTimeOfDay))
+      , pidSimulatorDateStart_(mapper.propertyId(kSimulatorDateStart))
+      , pidSimulatorDateDuration_(mapper.propertyId(kSimulatorDateDuration))
+      , pidSimulatorDateInterval_(mapper.propertyId(kSimulatorDateInterval))
       , optBuilding_(mapper.propertyOptionId(kExemplarType, kExemplarTypeBuilding))
       , optLotConfig_(mapper.propertyOptionId(kExemplarType, kExemplarTypeLotConfig))
       , optProp_(mapper.propertyOptionId(kExemplarType, kExemplarTypeProp)) {
@@ -462,6 +467,54 @@ std::optional<ParsedPropExemplar> ExemplarParser::parseProp(const Exemplar::Reco
         }
     }
 
+    if (pidNighttimeStateChange_) {
+        if (auto* prop = findProperty(exemplar, *pidNighttimeStateChange_)) {
+            if (const auto value = prop->GetScalarAs<uint8_t>()) {
+                parsedPropExemplar.nighttimeStateChange = (*value != 0);
+            }
+        }
+    }
+
+    if (pidPropTimeOfDay_) {
+        if (auto* prop = findProperty(exemplar, *pidPropTimeOfDay_)) {
+            if (prop->values.size() >= 2) {
+                const auto startHour = prop->GetScalarAs<float>(0);
+                const auto endHour = prop->GetScalarAs<float>(1);
+                if (startHour && endHour) {
+                    parsedPropExemplar.timeOfDay = PropTimeOfDay{*startHour, *endHour};
+                }
+            }
+        }
+    }
+
+    if (pidSimulatorDateStart_) {
+        if (auto* prop = findProperty(exemplar, *pidSimulatorDateStart_)) {
+            if (prop->values.size() >= 2) {
+                const auto month = prop->GetScalarAs<uint8_t>(0);
+                const auto day = prop->GetScalarAs<uint8_t>(1);
+                if (month && day) {
+                    parsedPropExemplar.simulatorDateStart = SimulatorDateStart{*month, *day};
+                }
+            }
+        }
+    }
+
+    if (pidSimulatorDateDuration_) {
+        if (auto* prop = findProperty(exemplar, *pidSimulatorDateDuration_)) {
+            if (const auto value = prop->GetScalarAs<uint32_t>()) {
+                parsedPropExemplar.simulatorDateDuration = *value;
+            }
+        }
+    }
+
+    if (pidSimulatorDateInterval_) {
+        if (auto* prop = findProperty(exemplar, *pidSimulatorDateInterval_)) {
+            if (const auto value = prop->GetScalarAs<uint32_t>()) {
+                parsedPropExemplar.simulatorDateInterval = *value;
+            }
+        }
+    }
+
     parsedPropExemplar.modelTgi = resolveModelTgi_(exemplar, tgi);
 
     if (parsedPropExemplar.modelTgi.has_value()) {
@@ -549,16 +602,16 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
 
     // Load icon if TGI is available and we have index service
     if (parsed.iconTgi.has_value() && indexService_) {
-        spdlog::debug("buildingFromParsed: Loading icon for building {} (0x{:08X})",
+        spdlog::trace("buildingFromParsed: Loading icon for building {} (0x{:08X})",
                       parsed.name, parsed.tgi.instance);
         const auto pngData = indexService_->loadEntryData(*parsed.iconTgi);
         if (pngData.has_value() && !pngData->empty()) {
-            spdlog::debug("buildingFromParsed: Got {} bytes of PNG data", pngData->size());
+            spdlog::trace("buildingFromParsed: Got {} bytes of PNG data", pngData->size());
             // Decode PNG to RGBA32 pixel data
             auto decoded = decodePngToRgba32(*pngData);
 
             if (!decoded.pixels.empty()) {
-                spdlog::debug("buildingFromParsed: Decoded to {}x{} RGBA", decoded.width, decoded.height);
+                spdlog::trace("buildingFromParsed: Decoded to {}x{} RGBA", decoded.width, decoded.height);
                 Icon icon;
                 icon.data = rfl::Bytestring(std::move(decoded.pixels));
                 icon.width = decoded.width;
@@ -570,7 +623,7 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
             }
         }
         else {
-            spdlog::debug("buildingFromParsed: No PNG data found for icon TGI 0x{:08X}/0x{:08X}/0x{:08X}",
+            spdlog::warn("buildingFromParsed: No PNG data found for icon TGI 0x{:08X}/0x{:08X}/0x{:08X}",
                           parsed.iconTgi->type, parsed.iconTgi->group, parsed.iconTgi->instance);
         }
     }
@@ -628,6 +681,11 @@ Prop ExemplarParser::propFromParsed(const ParsedPropExemplar& parsed) const {
     for (const auto familyId : parsed.familyIds) {
         prop.familyIds.emplace_back(familyId);
     }
+    prop.nighttimeStateChange = parsed.nighttimeStateChange;
+    prop.timeOfDay = parsed.timeOfDay;
+    prop.simulatorDateStart = parsed.simulatorDateStart;
+    prop.simulatorDateDuration = parsed.simulatorDateDuration;
+    prop.simulatorDateInterval = parsed.simulatorDateInterval;
 
     if (parsed.modelTgi.has_value() && thumbnailRenderer_) {
         auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, kRenderedThumbnailSize);
@@ -835,6 +893,7 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     };
 
     if (const auto* rkt0 = findProperty(exemplar, kRkt0PropertyId)) {
+        spdlog::trace("Found RKT0 for exemplar {}", exemplarTgi.ToString());
         // RKT0 -> One model for all zooms and rotation (True3D)
         if (const auto tgi = tgiFromList(rkt0)) {
             return tgi;
@@ -842,6 +901,7 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     }
 
     if (const auto* rkt1 = findProperty(exemplar, kRkt1PropertyId)) {
+        spdlog::trace("Found RKT1 for exemplar {}", exemplarTgi.ToString());
         // RKT1 -> The S3D tgi will point towards the Zoom 1, South version of the 20 possible models
         if (auto tgi = tgiFromList(rkt1)) {
             tgi->instance = tgi->instance + kDesiredZoomOffset + kDesiredRotationOffset;
@@ -850,6 +910,7 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     }
 
     if (const auto* rkt5 = findProperty(exemplar, kRkt5PropertyId)) {
+        spdlog::trace("Found RKT5 for exemplar {}", exemplarTgi.ToString());
         if (auto tgi = tgiFromList(rkt5)) {
             constexpr uint32_t zoomOffset = static_cast<uint32_t>(kDesiredZoomLevel - 1) * 0x100u;
             constexpr uint32_t rotationOffset = static_cast<uint32_t>(kDesiredRotation) * 0x10u;
@@ -859,6 +920,7 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     }
 
     if (const auto* rkt3 = findProperty(exemplar, kRkt3PropertyId)) {
+        spdlog::trace("Found RKT3 for exemplar {}", exemplarTgi.ToString());
         constexpr size_t index = 2 + static_cast<size_t>(kDesiredZoomLevel - 1);
         if (rkt3->values.size() > index) {
             auto type = getU32(rkt3, 0).value_or(kTypeIdS3D);
@@ -874,6 +936,7 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     }
 
     if (const auto* rkt2 = findProperty(exemplar, kRkt2PropertyId)) {
+        spdlog::trace("Found RKT2 for exemplar {}", exemplarTgi.ToString());
         constexpr size_t index = 2 + static_cast<size_t>(kDesiredZoomLevel - 1) * 4 +
             static_cast<size_t>(kDesiredRotation);
         if (rkt2->values.size() > index) {
@@ -885,24 +948,54 @@ std::optional<DBPF::Tgi> ExemplarParser::resolveModelTgi_(const Exemplar::Record
     }
 
     if (const auto* rkt4 = findProperty(exemplar, kRkt4PropertyId)) {
+        spdlog::trace("Found RKT4 for exemplar {}", exemplarTgi.ToString());
         constexpr size_t blockSize = 8;
-        for (size_t i = 0; i + blockSize - 1 < rkt4->values.size(); i += blockSize) {
-            const auto state = getU32(rkt4, i);
-            if (!state || *state != 0) {
-                continue;
-            }
-            auto type = getU32(rkt4, i + 5).value_or(kTypeIdS3D);
-            if (type == 0) {
-                type = kTypeIdS3D;
-            }
-            const auto group = *getU32(rkt4, i + 6) + kDesiredZoomOffset;
-            const auto instance = *getU32(rkt4, i + 7) + kDesiredRotationOffset;
-            if (group && instance) {
-                return DBPF::Tgi{type, group, instance};
+        // Try state 0 (normal) first, then state 1 (special/timed prop).
+        // Timed props might have a null TGI in state 0 and the real model in state 1
+        for (const uint8_t targetState : {0u, 1u}) {
+            for (size_t i = 0; i + blockSize - 1 < rkt4->values.size(); i += blockSize) {
+                const auto state = getU32(rkt4, i);
+                if (!state || *state != targetState) {
+                    spdlog::trace("Skipping RKT4 block at index {} with state {} (looking for state {})",
+                              i, state ? std::to_string(*state) : "null", targetState);
+                    continue;
+                }
+
+                // Rep 5 is the Resource Key Type (R): 0x27812820=RKT0, 0x27812821=RKT1.
+                // Rep 6-8 are the model's Type, Group and Instance.
+                const auto rktValue = getU32(rkt4, i + 4);
+                if (!rktValue) {
+                    spdlog::trace("Skipping RKT4 block at index {} with invalid RKT value", i);
+                    continue;
+                }
+
+                const auto type = getU32(rkt4, i + 5).value_or(kTypeIdS3D);
+                const auto group = getU32(rkt4, i + 6);
+                const auto instance = getU32(rkt4, i + 7);
+                if (!group || !instance || !type || (*group==0 && *instance==0)) {
+                    spdlog::trace("Skipping RKT4 block at index {} with invalid TGI", i);
+                    continue;
+                }
+                const uint32_t finalType = type;
+                const uint32_t finalGroup = *group;
+                uint32_t finalInstance = *instance;
+
+                // For RKT1 the stored I is the base (zoom 1, south), we should apply offsets
+                // For RKT0 the TGI is already the exact model
+                if (!rktValue || *rktValue == kRkt1PropertyId) {
+                    finalInstance += kDesiredZoomOffset + kDesiredRotationOffset;
+                }
+
+                if (finalType && finalGroup && finalInstance) {
+                    const auto finalTgi = DBPF::Tgi{finalType, finalGroup, finalInstance};
+                    spdlog::trace("Final TGI for model: {}", finalTgi.ToString());
+                    return finalTgi;
+                }
             }
         }
     }
 
+    spdlog::warn("Did not manage to resolve model TGI for exemplar {}", exemplarTgi.ToString());
     return std::nullopt;
 }
 
@@ -937,6 +1030,7 @@ std::optional<std::array<float, 6>> ExemplarParser::loadModelBounds_(const DBPF:
         };
     }
 
+    spdlog::warn("Unable to load model bounds for S3D model {}", modelTgi.ToString());
     return std::nullopt;
 }
 

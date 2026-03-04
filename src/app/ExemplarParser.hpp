@@ -51,6 +51,11 @@ constexpr auto kRkt3PropertyId = 0x27812823u;
 constexpr auto kRkt4PropertyId = 0x27812824u;
 constexpr auto kRkt5PropertyId = 0x27812825u;
 constexpr auto kOccupantSize = "Occupant Size";
+constexpr auto kNighttimeStateChange = "Nighttime State Change";
+constexpr auto kPropTimeOfDay = "Prop Time of Day";
+constexpr auto kSimulatorDateStart = "Simulator Date Start";
+constexpr auto kSimulatorDateDuration = "Simulator Date Duration";
+constexpr auto kSimulatorDateInterval = "Simulator Date Interval";
 
 // Lot object array indices (0-based, spec uses 1-based rep numbers)
 constexpr auto kLotObjectIndexType = 0; // Rep 1: Object type (0 = building, 1 = prop, etc.)
@@ -103,6 +108,11 @@ struct ParsedPropExemplar {
     float maxZ{0.0f};
     bool hasModelBounds{false};
     std::vector<uint32_t> familyIds;
+    std::optional<bool> nighttimeStateChange;
+    std::optional<PropTimeOfDay> timeOfDay;
+    std::optional<SimulatorDateStart> simulatorDateStart;
+    std::optional<uint32_t> simulatorDateDuration;
+    std::optional<uint32_t> simulatorDateInterval;
     std::optional<DBPF::Tgi> modelTgi;
 };
 
@@ -170,6 +180,11 @@ private:
     std::optional<uint32_t> pidLotConfigWealthType_;
     std::optional<uint32_t> pidLotConfigPurposeType_;
     std::optional<uint32_t> pidOccupantSize_;
+    std::optional<uint32_t> pidNighttimeStateChange_;
+    std::optional<uint32_t> pidPropTimeOfDay_;
+    std::optional<uint32_t> pidSimulatorDateStart_;
+    std::optional<uint32_t> pidSimulatorDateDuration_;
+    std::optional<uint32_t> pidSimulatorDateInterval_;
 
     // Cached exemplar type option IDs
     std::optional<uint32_t> optBuilding_;

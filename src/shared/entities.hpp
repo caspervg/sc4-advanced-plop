@@ -56,6 +56,16 @@ struct Building {
     std::vector<Lot> lots;
 };
 
+struct PropTimeOfDay {
+    float startHour;
+    float endHour;
+};
+
+struct SimulatorDateStart {
+    uint8_t month;
+    uint8_t day;
+};
+
 struct Prop {
     rfl::Hex<uint32_t> groupId;
     rfl::Hex<uint32_t> instanceId;
@@ -73,6 +83,11 @@ struct Prop {
     float minZ = 0.0f;
     float maxZ = 0.0f;
     std::vector<rfl::Hex<uint32_t>> familyIds;
+    std::optional<bool> nighttimeStateChange;
+    std::optional<PropTimeOfDay> timeOfDay;
+    std::optional<SimulatorDateStart> simulatorDateStart;
+    std::optional<uint32_t> simulatorDateDuration;
+    std::optional<uint32_t> simulatorDateInterval;
 
     std::optional<Thumbnail> thumbnail;
 };
@@ -83,7 +98,7 @@ struct PropFamilyInfo {
 };
 
 struct PropsCache {
-    uint32_t version = 2;
+    uint32_t version = 3;
     std::vector<Prop> props;
     std::vector<PropFamilyInfo> propFamilies;
 };

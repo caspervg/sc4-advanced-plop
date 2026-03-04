@@ -36,6 +36,8 @@ private:
     void RenderTableInternal_(const std::vector<PropView>& filteredProps,
                               const std::unordered_set<uint64_t>& favorites);
 
+    [[nodiscard]] bool HasPropTooltipContent_(const Prop& prop) const;
+    void RenderPropTooltip_(const Prop& prop) const;
     void RenderFavButton_(const Prop& prop) const;
     void RenderRotationModal_();
 

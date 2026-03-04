@@ -38,7 +38,7 @@ namespace thumb {
 
         if (tgi.type != kTypeIdS3D) {
             if (tgi.type == kTypeIdATC) {
-                spdlog::debug("Thumbnail render received an ATC {}", tgi.ToString());
+                spdlog::trace("Thumbnail render received an ATC {}, not supported", tgi.ToString());
                 return std::nullopt;
             }
 
@@ -48,7 +48,7 @@ namespace thumb {
 
         const auto modelHandle = loadModel_(tgi);
         if (!modelHandle) {
-            spdlog::debug("Thumbnail renderer could not build model {}", tgi.ToString());
+            spdlog::trace("Thumbnail renderer could not build model {}", tgi.ToString());
             return std::nullopt;
         }
 
@@ -62,7 +62,7 @@ namespace thumb {
 
         const auto maxDim = std::max(std::max(sizeVec.x, sizeVec.y), sizeVec.z);
         if (maxDim <= 0.001f) {
-            spdlog::debug("Thumbnail renderer: degenerate bounds for {} (maxDim={})", tgi.ToString(), maxDim);
+            spdlog::warn("Thumbnail renderer: degenerate bounds for {} (maxDim={})", tgi.ToString(), maxDim);
             UnloadRenderTexture(target);
             return std::nullopt;
         }
@@ -127,7 +127,7 @@ namespace thumb {
         }
         camera.fovy = orthoHalfSize * 2.0f;
 
-        spdlog::debug("Thumbnail renderer camera for {}: maxDim={}, camDistance={}, orthoHalfSize={}",
+        spdlog::trace("Thumbnail renderer camera for {}: maxDim={}, camDistance={}, orthoHalfSize={}",
                       tgi.ToString(), maxDim, camDistance, orthoHalfSize);
 
         BeginTextureMode(target);
