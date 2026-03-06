@@ -14,6 +14,13 @@ namespace {
 }
 
 void ThumbnailStore::Load(const std::filesystem::path& path) {
+    file_.close();
+    file_.clear();
+    giKeys_.clear();
+    entryCount_ = 0;
+    width_ = 0;
+    height_ = 0;
+
     if (!std::filesystem::exists(path)) {
         LOG_WARN("ThumbnailStore: file not found: {}", path.string());
         return;
@@ -96,6 +103,7 @@ std::optional<ThumbnailStore::ThumbnailData> ThumbnailStore::LoadThumbnail(const
         static_cast<std::streampos>(entryCount_ * kKeySize) +
         static_cast<std::streampos>(rank * stride);
 
+    file_.clear();
     file_.seekg(offset);
     if (!file_) {
         LOG_ERROR("ThumbnailStore: seek failed for rank {}", rank);
