@@ -30,8 +30,12 @@ protected:
     void UpdatePreviewOccupantRotation_() override;
     void UpdatePreviewOccupant_() override;
     void PopulatePreviewBounds_(PaintOverlay::PreviewPlacement& placement, uint32_t typeID) const override;
+    [[nodiscard]] bool IsDirectPreviewPlacementValid_(const PlannedPaint& placement) const override;
+    [[nodiscard]] bool ShouldForceDirectOverlay_() const override;
 
 private:
+    [[nodiscard]] bool IsFloraPlacementValid_(uint32_t typeID, const cS3DVector3& position) const;
+
     cRZAutoRefCount<cISC4FloraSimulator> floraSimulator_;
     const FloraRepository* floraRepository_{nullptr};
 

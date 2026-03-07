@@ -21,6 +21,7 @@ public:
 
     struct PreviewPlacement {
         PlannedPaint placement{};
+        bool valid = true;
         float width = 0.0f;
         float height = 0.0f;
         float depth = 0.0f;
@@ -115,6 +116,10 @@ private:
     static constexpr DWORD kPlannedBoxTopColor = 0x70FFB347;
     static constexpr DWORD kPlannedBoxSideColor = 0x50FF8C00;
     static constexpr DWORD kPlannedStiltColor = 0xA0FFD966;
+    static constexpr DWORD kInvalidMarkerColor = 0xF0FF5555;
+    static constexpr DWORD kInvalidBoxTopColor = 0x70FF6666;
+    static constexpr DWORD kInvalidBoxSideColor = 0x55CC3333;
+    static constexpr DWORD kInvalidStiltColor = 0xA0FF7777;
     static constexpr DWORD kCursorColor = 0xE0FF4444;
     static constexpr float kLineThickness = 0.6f;
     static constexpr float kMarkerSize = 1.0f;

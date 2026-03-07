@@ -12,7 +12,7 @@ namespace {
     constexpr spdlog::level::level_enum kDefaultLogLevel = spdlog::level::info;
     constexpr bool kDefaultLogToFile = true;
     constexpr bool kDefaultEnableDrawOverlay = true;
-    constexpr PreviewMode kDefaultPropPreviewMode = PreviewMode::Outline;
+    constexpr auto kDefaultPropPreviewMode = PreviewMode::Combined;
     constexpr bool kDefaultShowGridOverlay = true;
     constexpr bool kDefaultSnapPointsToGrid = false;
     constexpr bool kDefaultSnapPlacementsToGrid = false;

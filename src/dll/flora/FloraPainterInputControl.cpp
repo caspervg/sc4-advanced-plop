@@ -9,6 +9,7 @@
 
 namespace {
     constexpr auto kFloraPlacerControlID = 0x8A3F9D2Cu;
+    constexpr float kPreviewPosEpsilon = 0.05f;
 
     bool TrySetFloraOrientation(cISC4Occupant* occupant, const int32_t rotation) {
         if (!occupant) {
@@ -38,6 +39,16 @@ void FloraPainterInputControl::SetFloraToPaint(const uint32_t floraTypeID, const
 
 void FloraPainterInputControl::SetFloraRepository(const FloraRepository* floraRepository) {
     floraRepository_ = floraRepository;
+}
+
+bool FloraPainterInputControl::IsFloraPlacementValid_(const uint32_t typeID, const cS3DVector3& position) const {
+    if (!floraSimulator_ || typeID == 0) {
+        return true;
+    }
+
+    // Override the game's check
+    return true;
+    // return floraSimulator_->LocationIsOKForNewFlora(typeID, position.fX, position.fZ, nullptr);
 }
 
 void FloraPainterInputControl::OnCityChanged_(cISC4City* pCity) {
@@ -80,7 +91,7 @@ bool FloraPainterInputControl::PlaceAtWorld_(const cS3DVector3& pos, const int32
         return true;
     }
 
-    if (!floraSimulator_->LocationIsOKForNewFlora(floraType, pos.fX, pos.fZ, nullptr)) {
+    if (!IsFloraPlacementValid_(floraType, pos)) {
         LOG_DEBUG("Location not OK for flora 0x{:08X} at ({:.2f}, {:.2f})", floraType, pos.fX, pos.fZ);
         return false;
     }
@@ -140,7 +151,7 @@ void FloraPainterInputControl::CreatePreviewOccupant_() {
         return;
     }
 
-    if (!floraSimulator_->LocationIsOKForNewFlora(previewFloraType, currentCursorWorld_.fX, currentCursorWorld_.fZ, nullptr)) {
+    if (!IsFloraPlacementValid_(previewFloraType, currentCursorWorld_)) {
         return;
     }
 
@@ -163,7 +174,8 @@ void FloraPainterInputControl::CreatePreviewOccupant_() {
 
     cS3DVector3 initialPos = currentCursorWorld_;
     initialPos.fY += settings_.deltaYMeters;
-    if (!previewOccupant->SetPosition(&initialPos)) {
+    const bool needsVerticalAdjustment = std::abs(settings_.deltaYMeters) > kPreviewPosEpsilon;
+    if (needsVerticalAdjustment && !previewOccupant->SetPosition(&initialPos)) {
         floraSimulator_->DemolishFloraOccupant(occupant, 0);
         return;
     }
@@ -239,11 +251,22 @@ void FloraPainterInputControl::UpdatePreviewOccupant_() {
 
     cS3DVector3 worldPos = currentCursorWorld_;
     worldPos.fY += settings_.deltaYMeters;
+    if (!IsFloraPlacementValid_(CurrentDirectTypeID_(), worldPos)) {
+        previewOccupant_->SetVisibility(false, true);
+        previewPositionValid_ = false;
+        return;
+    }
 
     const bool posChanged =
-        std::abs(worldPos.fX - lastPreviewPosition_.fX) > 0.05f ||
-        std::abs(worldPos.fY - lastPreviewPosition_.fY) > 0.05f ||
-        std::abs(worldPos.fZ - lastPreviewPosition_.fZ) > 0.05f;
+        std::abs(worldPos.fX - lastPreviewPosition_.fX) > kPreviewPosEpsilon ||
+        std::abs(worldPos.fY - lastPreviewPosition_.fY) > kPreviewPosEpsilon ||
+        std::abs(worldPos.fZ - lastPreviewPosition_.fZ) > kPreviewPosEpsilon;
+
+    if (settings_.snapPointsToGrid && posChanged) {
+        DestroyPreviewOccupant_();
+        CreatePreviewOccupant_();
+        return;
+    }
 
     if (posChanged) {
         if (previewOccupant_->SetPosition(&worldPos)) {
@@ -259,6 +282,18 @@ void FloraPainterInputControl::UpdatePreviewOccupant_() {
     }
 
     previewOccupant_->SetVisibility(previewPositionValid_, true);
+}
+
+bool FloraPainterInputControl::IsDirectPreviewPlacementValid_(const PlannedPaint& placement) const {
+    return IsFloraPlacementValid_(placement.itemId, placement.position);
+}
+
+bool FloraPainterInputControl::ShouldForceDirectOverlay_() const {
+    if (!IsInDirectPaintState_() || settings_.previewMode != PreviewMode::FullModel || !cursorValid_) {
+        return false;
+    }
+
+    return !IsFloraPlacementValid_(CurrentDirectTypeID_(), currentCursorWorld_);
 }
 
 void FloraPainterInputControl::PopulatePreviewBounds_(PaintOverlay::PreviewPlacement& placement,

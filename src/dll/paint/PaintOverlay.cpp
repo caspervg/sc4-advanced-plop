@@ -449,6 +449,11 @@ void PaintOverlay::EmitMarker_(const cS3DVector3& center, const float size, cons
 }
 
 void PaintOverlay::EmitPreviewPlacement_(const PreviewPlacement& preview, cISTETerrain* terrain, const uint32_t layer) {
+    const DWORD markerColor = preview.valid ? kPlannedMarkerColor : kInvalidMarkerColor;
+    const DWORD topColor = preview.valid ? kPlannedBoxTopColor : kInvalidBoxTopColor;
+    const DWORD sideColor = preview.valid ? kPlannedBoxSideColor : kInvalidBoxSideColor;
+    const DWORD stiltColor = preview.valid ? kPlannedStiltColor : kInvalidStiltColor;
+
     const bool hasBounds = preview.maxX > preview.minX && preview.maxZ > preview.minZ;
     if (!hasBounds && (preview.width <= 0.0f || preview.depth <= 0.0f)) {
         if (terrain) {
@@ -460,11 +465,11 @@ void PaintOverlay::EmitPreviewPlacement_(const PreviewPlacement& preview, cISTET
                     cS3DVector3(preview.placement.position.fX, groundY, preview.placement.position.fZ),
                     cS3DVector3(preview.placement.position.fX, previewY, preview.placement.position.fZ),
                     kLineThickness * 0.4f,
-                    kPlannedStiltColor,
+                    stiltColor,
                     layer);
             }
         }
-        EmitMarker_(preview.placement.position, kMarkerSize * 0.9f, kPlannedMarkerColor, layer);
+        EmitMarker_(preview.placement.position, kMarkerSize * 0.9f, markerColor, layer);
         return;
     }
 
@@ -504,7 +509,7 @@ void PaintOverlay::EmitPreviewPlacement_(const PreviewPlacement& preview, cISTET
                     cS3DVector3(baseCorner.fX, groundY, baseCorner.fZ),
                     baseCorner,
                     kLineThickness * 0.4f,
-                    kPlannedStiltColor,
+                    stiltColor,
                     layer);
             }
         };
@@ -515,26 +520,26 @@ void PaintOverlay::EmitPreviewPlacement_(const PreviewPlacement& preview, cISTET
         emitStilt(baseD);
     }
 
-    EmitQuad_(topA, topB, topC, topD, kPlannedBoxTopColor, layer);
-    EmitQuad_(baseA, baseB, topB, topA, kPlannedBoxSideColor, layer);
-    EmitQuad_(baseB, baseC, topC, topB, kPlannedBoxSideColor, layer);
-    EmitQuad_(baseC, baseD, topD, topC, kPlannedBoxSideColor, layer);
-    EmitQuad_(baseD, baseA, topA, topD, kPlannedBoxSideColor, layer);
+    EmitQuad_(topA, topB, topC, topD, topColor, layer);
+    EmitQuad_(baseA, baseB, topB, topA, sideColor, layer);
+    EmitQuad_(baseB, baseC, topC, topB, sideColor, layer);
+    EmitQuad_(baseC, baseD, topD, topC, sideColor, layer);
+    EmitQuad_(baseD, baseA, topA, topD, sideColor, layer);
 
-    EmitLine_(baseA, baseB, kLineThickness * 0.7f, kPlannedMarkerColor, layer);
-    EmitLine_(baseB, baseC, kLineThickness * 0.7f, kPlannedMarkerColor, layer);
-    EmitLine_(baseC, baseD, kLineThickness * 0.7f, kPlannedMarkerColor, layer);
-    EmitLine_(baseD, baseA, kLineThickness * 0.7f, kPlannedMarkerColor, layer);
+    EmitLine_(baseA, baseB, kLineThickness * 0.7f, markerColor, layer);
+    EmitLine_(baseB, baseC, kLineThickness * 0.7f, markerColor, layer);
+    EmitLine_(baseC, baseD, kLineThickness * 0.7f, markerColor, layer);
+    EmitLine_(baseD, baseA, kLineThickness * 0.7f, markerColor, layer);
 
-    EmitLine_(topA, topB, kLineThickness * 0.55f, kPlannedMarkerColor, layer);
-    EmitLine_(topB, topC, kLineThickness * 0.55f, kPlannedMarkerColor, layer);
-    EmitLine_(topC, topD, kLineThickness * 0.55f, kPlannedMarkerColor, layer);
-    EmitLine_(topD, topA, kLineThickness * 0.55f, kPlannedMarkerColor, layer);
+    EmitLine_(topA, topB, kLineThickness * 0.55f, markerColor, layer);
+    EmitLine_(topB, topC, kLineThickness * 0.55f, markerColor, layer);
+    EmitLine_(topC, topD, kLineThickness * 0.55f, markerColor, layer);
+    EmitLine_(topD, topA, kLineThickness * 0.55f, markerColor, layer);
 
-    EmitLine_(baseA, topA, kLineThickness * 0.45f, kPlannedMarkerColor, layer);
-    EmitLine_(baseB, topB, kLineThickness * 0.45f, kPlannedMarkerColor, layer);
-    EmitLine_(baseC, topC, kLineThickness * 0.45f, kPlannedMarkerColor, layer);
-    EmitLine_(baseD, topD, kLineThickness * 0.45f, kPlannedMarkerColor, layer);
+    EmitLine_(baseA, topA, kLineThickness * 0.45f, markerColor, layer);
+    EmitLine_(baseB, topB, kLineThickness * 0.45f, markerColor, layer);
+    EmitLine_(baseC, topC, kLineThickness * 0.45f, markerColor, layer);
+    EmitLine_(baseD, topD, kLineThickness * 0.45f, markerColor, layer);
 
     // Direction arrow on the top face: shaft from mid(C,D) toward mid(A,B), with barbs at the tip.
     const auto midAB = cS3DVector3((topA.fX + topB.fX) * 0.5f, (topA.fY + topB.fY) * 0.5f, (topA.fZ + topB.fZ) * 0.5f);

@@ -14,6 +14,8 @@
 #include "cISTETerrain.h"
 
 namespace {
+    constexpr float kTerrainGridSpacing = 16.0f;
+
     float SnapCoordinate(const float value, const float gridStep) {
         if (gridStep <= 0.0f) {
             return value;
@@ -23,6 +25,29 @@ namespace {
 
     float ClampDeltaY(const float value) {
         return std::max(value, 0.0f);
+    }
+
+    float SampleStableTerrainHeight(cISTETerrain* terrain, const float x, const float z) {
+        if (!terrain) {
+            return 0.0f;
+        }
+
+        const float cellX = std::floor(x / kTerrainGridSpacing);
+        const float cellZ = std::floor(z / kTerrainGridSpacing);
+        const float x0 = cellX * kTerrainGridSpacing;
+        const float z0 = cellZ * kTerrainGridSpacing;
+        const float x1 = x0 + kTerrainGridSpacing;
+        const float z1 = z0 + kTerrainGridSpacing;
+        const float tx = std::clamp((x - x0) / kTerrainGridSpacing, 0.0f, 1.0f);
+        const float tz = std::clamp((z - z0) / kTerrainGridSpacing, 0.0f, 1.0f);
+
+        const float h00 = terrain->GetAltitudeAtNearestGrid(x0, z0);
+        const float h10 = terrain->GetAltitudeAtNearestGrid(x1, z0);
+        const float h01 = terrain->GetAltitudeAtNearestGrid(x0, z1);
+        const float h11 = terrain->GetAltitudeAtNearestGrid(x1, z1);
+        const float hx0 = h00 + (h10 - h00) * tx;
+        const float hx1 = h01 + (h11 - h01) * tx;
+        return hx0 + (hx1 - hx0) * tz;
     }
 }
 
@@ -530,7 +555,13 @@ float BasePainterInputControl::GetGridStepMeters_() const {
 
 cS3DVector3 BasePainterInputControl::SnapWorldToGrid_(const cS3DVector3& position) const {
     const float gridStep = GetGridStepMeters_();
-    return {SnapCoordinate(position.fX, gridStep), position.fY, SnapCoordinate(position.fZ, gridStep)};
+    const float snappedX = SnapCoordinate(position.fX, gridStep);
+    const float snappedZ = SnapCoordinate(position.fZ, gridStep);
+    float snappedY = position.fY;
+    if (cISTETerrain* terrain = GetTerrain_()) {
+        snappedY = SampleStableTerrainHeight(terrain, snappedX, snappedZ);
+    }
+    return {snappedX, snappedY, snappedZ};
 }
 
 void BasePainterInputControl::SnapPlacementToGrid_(PlannedPaint& placement) const {
@@ -734,7 +765,7 @@ bool BasePainterInputControl::ShouldShowOutlinePreview_() const {
         return false;
     }
     if (state_ == ControlState::ActiveDirect) {
-        return settings_.showGrid || settings_.previewMode != PreviewMode::FullModel;
+        return settings_.showGrid || settings_.previewMode != PreviewMode::FullModel || ShouldForceDirectOverlay_();
     }
     return state_ == ControlState::ActiveLine || state_ == ControlState::ActivePolygon;
 }
@@ -763,9 +794,10 @@ void BasePainterInputControl::RebuildPreviewOverlay_() {
 
         if (hasOverlayCursor) {
             PopulatePreviewBounds_(previewPlacement, previewPlacement.placement.itemId);
+            previewPlacement.valid = IsDirectPreviewPlacementValid_(previewPlacement.placement);
         }
 
-        const bool drawPlacement = settings_.previewMode != PreviewMode::FullModel;
+        const bool drawPlacement = settings_.previewMode != PreviewMode::FullModel || !previewPlacement.valid;
         overlay_.BuildDirectPreview(hasOverlayCursor, overlayCursor, GetTerrain_(), settings_, previewPlacement,
                                     drawPlacement);
         return;

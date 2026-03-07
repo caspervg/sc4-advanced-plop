@@ -82,6 +82,12 @@ protected:
     virtual void PopulatePreviewBounds_(PaintOverlay::PreviewPlacement& placement,
                                         uint32_t typeID) const {}
 
+    // Returns whether the current direct preview position is valid for placement.
+    [[nodiscard]] virtual bool IsDirectPreviewPlacementValid_(const PlannedPaint& placement) const { return true; }
+
+    // Forces the outline overlay to stay visible even in full-model-only mode.
+    [[nodiscard]] virtual bool ShouldForceDirectOverlay_() const { return false; }
+
 
     // Called by PlaceAtWorld_() implementations to register the occupant in the undo stack.
     // When batchingPlacements_ is true, adds to the current group (for line/polygon).
