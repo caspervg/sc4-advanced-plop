@@ -273,7 +273,7 @@ void FloraPanelTab::RenderIndividualFloraTable_(const std::vector<size_t>& filte
             }
 
             ImGui::TableNextColumn();
-            if (f.width > 0.0f && f.height > 0.0f && f.depth > 0.0f) {
+            if (f.width >= 0.0f && f.height >= 0.0f && f.depth >= 0.0f) {
                 ImGui::Text("%.1f x %.1f x %.1f", f.width, f.height, f.depth);
             } else {
                 ImGui::TextDisabled("N/A");
