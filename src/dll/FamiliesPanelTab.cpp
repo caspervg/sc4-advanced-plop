@@ -39,7 +39,7 @@ namespace {
 }
 
 const char* FamiliesPanelTab::GetTabName() const {
-    return "Families";
+    return "Prop Families";
 }
 
 void FamiliesPanelTab::OnRender() {
@@ -170,6 +170,7 @@ void FamiliesPanelTab::OnRender() {
             ImGui::TableSetupColumn("Props", ImGuiTableColumnFlags_WidthFixed, UI::propsColumnWidth());
             ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, UI::familyActionColWidth());
             ImGui::TableHeadersRow();
+            ImGui::TableSetupScrollFreeze(0, 1);
 
             for (const auto& row : filteredFamilies) {
                 const bool selected = row.combinedIndex == selectedFamilyIndex_;

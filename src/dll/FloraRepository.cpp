@@ -1,6 +1,8 @@
 #include "FloraRepository.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <unordered_map>
 #include <unordered_set>
 #include <wil/resource.h>
 #include <wil/win32_helpers.h>
@@ -26,6 +28,7 @@ void FloraRepository::Load() {
         floraFamilyInfos_.clear();
         floraGroups_.clear();
         floraGroupIds_.clear();
+        floraCollections_.clear();
 
         floraThumbnails_.Load(pluginsPath / "flora_thumbnails.bin");
 
@@ -39,6 +42,7 @@ void FloraRepository::Load() {
             }
             RebuildIndexes_();
             BuildFloraGroups_();
+            BuildFloraCollections_();
 
             LOG_INFO("Loaded {} flora items and {} flora families from {}",
                      floraItems_.size(), floraFamilyNames_.size(), cborPath.string());
@@ -117,6 +121,74 @@ void FloraRepository::BuildFloraGroups_() {
     }
 
     LOG_INFO("Built {} flora groups from cluster chains", floraGroups_.size());
+}
+
+void FloraRepository::BuildFloraCollections_() {
+    floraCollections_.clear();
+
+    std::unordered_map<uint32_t, std::vector<const Flora*>> familyMembers;
+    for (const auto& flora : floraItems_) {
+        for (const auto& familyId : flora.familyIds) {
+            familyMembers[familyId.value()].push_back(&flora);
+        }
+    }
+
+    std::vector<uint32_t> familyIds;
+    familyIds.reserve(familyMembers.size());
+    for (const auto& [familyId, _] : familyMembers) {
+        familyIds.push_back(familyId);
+    }
+    std::ranges::sort(familyIds, [this](const uint32_t lhs, const uint32_t rhs) {
+        const std::string lhsName = floraFamilyNames_.contains(lhs) ? floraFamilyNames_.at(lhs) : "";
+        const std::string rhsName = floraFamilyNames_.contains(rhs) ? floraFamilyNames_.at(rhs) : "";
+        if (lhsName != rhsName) {
+            return lhsName < rhsName;
+        }
+        return lhs < rhs;
+    });
+
+    floraCollections_.reserve(familyIds.size() + floraGroups_.size());
+    for (const uint32_t familyId : familyIds) {
+        auto it = familyMembers.find(familyId);
+        if (it == familyMembers.end() || it->second.empty()) {
+            continue;
+        }
+
+        FloraCollection collection;
+        collection.type = CollectionType::Family;
+        collection.id = familyId;
+        if (const auto nameIt = floraFamilyNames_.find(familyId); nameIt != floraFamilyNames_.end() && !nameIt->second.empty()) {
+            collection.name = nameIt->second;
+        }
+        else {
+            char buffer[32];
+            std::snprintf(buffer, sizeof(buffer), "Family 0x%08X", familyId);
+            collection.name = buffer;
+        }
+        collection.members = it->second;
+        collection.palette.reserve(collection.members.size());
+        for (const Flora* flora : collection.members) {
+            collection.palette.push_back(FamilyEntry{flora->instanceId, 1.0f});
+        }
+        floraCollections_.push_back(std::move(collection));
+    }
+
+    for (size_t i = 0; i < floraGroups_.size(); ++i) {
+        FloraCollection collection;
+        collection.type = CollectionType::MultiStage;
+        collection.id = i < floraGroupIds_.size() ? floraGroupIds_[i] : 0;
+        collection.name = floraGroups_[i].name;
+        collection.palette = floraGroups_[i].entries;
+        collection.members.reserve(floraGroups_[i].entries.size());
+        for (const auto& entry : floraGroups_[i].entries) {
+            if (const Flora* flora = FindFloraByInstanceId(entry.propID.value())) {
+                collection.members.push_back(flora);
+            }
+        }
+        floraCollections_.push_back(std::move(collection));
+    }
+
+    LOG_INFO("Built {} flora collections", floraCollections_.size());
 }
 
 std::filesystem::path FloraRepository::GetPluginsPath_() {

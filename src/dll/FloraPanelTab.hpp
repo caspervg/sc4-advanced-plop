@@ -27,16 +27,10 @@ private:
 
     void RenderFilterUI_();
     void BuildFilteredFloraIndices_(std::vector<size_t>& filteredIndices) const;
-    void BuildFilteredGroupIndices_(std::vector<size_t>& filteredIndices) const;
     void RenderIndividualFloraTable_(const std::vector<size_t>& filteredIndices);
     [[nodiscard]] bool RenderFloraPills_(const Flora& flora, bool startOnNewLine) const;
-    void RenderGroupsTable_(const std::vector<size_t>& filteredIndices);
-    void RenderSelectedGroupPanel_();
     void RenderPaintModal_();
     void QueuePaintForFlora_(const Flora& flora);
-    void QueuePaintForGroup_(const PropFamily& group);
-    void RenderFavoriteButton_(const Flora& flora, const char* idSuffix = "") const;
-    [[nodiscard]] const PropFamily* GetSelectedGroup_() const;
 
     FloraRepository* flora_;
     ThumbnailCache<uint64_t> thumbnailCache_{};
@@ -44,14 +38,12 @@ private:
 
     char searchBuf_[256]{};
     bool favoritesOnly_{false};
-    size_t selectedGroupIndex_{0};
 
     struct PendingPaintState {
         uint32_t typeId{0};
         std::string name;
         PropPaintSettings settings{};
         bool open{false};
-        bool isGroup{false};
     };
     PendingPaintState pendingPaint_{};
 };
