@@ -374,3 +374,4 @@ plans/
 cmake-build-*/
 .ai-extra-info/
 imgui.lib
+/vendor/sc4-imgui-service/imgui.lib
