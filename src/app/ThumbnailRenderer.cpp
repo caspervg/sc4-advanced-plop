@@ -76,8 +76,6 @@ namespace thumb {
             center.z
         };
 
-        const float scale = 0.95f * static_cast<float>(size) / (maxDim * 1.414f);
-
         Camera3D camera{};
         camera.projection = CAMERA_ORTHOGRAPHIC;
 
@@ -93,15 +91,11 @@ namespace thumb {
             std::sin(kYawRad) * std::cos(kPitchRadZoom5)
         };
 
-        // Keep the model well within raylib's fixed far plane (~1000 units)
-        // while staying far enough to avoid near-plane clipping on small props.
-        const auto camDistance = std::clamp(maxDim * 12.0f, 80.0f, 1200.0f);
-        camera.position = Vector3Add(framingTarget, Vector3Scale(dir, camDistance));
-
         // Compute ortho size to tightly fit all corners after rotation
-        // We need to project all 8 corners of the bounding box onto the camera's view plane
-        // and find the maximum extent to ensure the entire model is visible
-        Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+        // We project all 8 corners of the bounding box onto the camera basis and
+        // compute both viewport extents and the depth needed to keep the camera
+        // in front of the closest geometry.
+        Vector3 forward = Vector3Normalize(Vector3Negate(dir));
         Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
         Vector3 camUp = Vector3Normalize(Vector3CrossProduct(right, forward));
 
@@ -109,6 +103,8 @@ namespace thumb {
         auto maxRight = std::numeric_limits<float>::lowest();
         auto minUp = std::numeric_limits<float>::max();
         auto maxUp = std::numeric_limits<float>::lowest();
+        auto minForward = std::numeric_limits<float>::max();
+        auto maxForward = std::numeric_limits<float>::lowest();
         for (auto xi = 0; xi < 2; ++xi) {
             for (auto yi = 0; yi < 2; ++yi) {
                 for (auto zi = 0; zi < 2; ++zi) {
@@ -117,16 +113,16 @@ namespace thumb {
                         yi ? bounds.max.y : bounds.min.y,
                         zi ? bounds.max.z : bounds.min.z
                     };
-                    // Project the corner onto the camera's right and up vectors
-                    // to determine how much screen space it needs
-                    Vector3 scaledCorner = Vector3Scale(corner, scale);
-                    Vector3 toCorner = Vector3Subtract(scaledCorner, Vector3Scale(framingTarget, scale));
+                    Vector3 toCorner = Vector3Subtract(corner, framingTarget);
                     const float projRight = Vector3DotProduct(toCorner, right);
                     const float projUp = Vector3DotProduct(toCorner, camUp);
+                    const float projForward = Vector3DotProduct(toCorner, forward);
                     minRight = std::min(minRight, projRight);
                     maxRight = std::max(maxRight, projRight);
                     minUp = std::min(minUp, projUp);
                     maxUp = std::max(maxUp, projUp);
+                    minForward = std::min(minForward, projForward);
+                    maxForward = std::max(maxForward, projForward);
                 }
             }
         }
@@ -137,19 +133,23 @@ namespace thumb {
         if (orthoHalfSize <= 0.0f) {
             orthoHalfSize = static_cast<float>(size) / 2.0f;
         }
+
+        const float nearMargin = std::max(maxDim * 0.25f, 4.0f);
+        const float maxDistance = std::max(nearMargin, 900.0f - std::max(0.0f, maxForward));
+        const float camDistance = std::clamp(-minForward + nearMargin, nearMargin, maxDistance);
+        camera.position = Vector3Add(framingTarget, Vector3Scale(dir, camDistance));
         camera.fovy = orthoHalfSize * 2.0f;
 
         spdlog::trace(
-            "Thumbnail renderer camera for {}: maxDim={}, camDistance={}, orthoHalfSize={}, focusY={}",
-            tgi.ToString(), maxDim, camDistance, orthoHalfSize, framingTarget.y);
+            "Thumbnail renderer camera for {}: maxDim={}, camDistance={}, orthoHalfSize={}, focusY={}, depth=[{}, {}]",
+            tgi.ToString(), maxDim, camDistance, orthoHalfSize, framingTarget.y, minForward, maxForward);
 
         BeginTextureMode(target);
         ClearBackground(BLANK);
         BeginMode3D(camera);
-        const Vector3 renderScale{scale, scale, scale};
         rlDisableBackfaceCulling();
         DrawModelEx(modelHandle->model, Vector3Zero(), Vector3{0, 1, 0}, 0.0f,
-                    renderScale, WHITE);
+                    Vector3One(), WHITE);
         rlEnableBackfaceCulling();
         EndMode3D();
         EndTextureMode();
