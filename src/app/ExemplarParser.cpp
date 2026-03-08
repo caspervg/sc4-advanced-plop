@@ -146,9 +146,11 @@ namespace fs = std::filesystem;
 
 ExemplarParser::ExemplarParser(const PropertyMapper& mapper,
                                const DbpfIndexService* indexService,
-                               const bool renderThumbnails)
+                               const bool renderThumbnails,
+                               const uint32_t thumbnailSize)
     : propertyMapper_(mapper)
       , indexService_(indexService)
+      , thumbnailSize_(thumbnailSize)
       , pidExemplarType_(mapper.propertyId(kExemplarType))
       , pidItemName_(mapper.propertyId(kItemName))
       , pidUserVisibleNameKey_(mapper.propertyId(kUserVisibleNameKey))
@@ -679,7 +681,7 @@ Flora ExemplarParser::floraFromParsed(const ParsedFloraExemplar& parsed) const {
     }
 
     if (parsed.modelTgi.has_value() && thumbnailRenderer_) {
-        auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, kRenderedThumbnailSize);
+        auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, thumbnailSize_);
         if (rendered.has_value() && !rendered->pixels.empty()) {
             PreRendered preview;
             preview.data = rfl::Bytestring(std::move(rendered->pixels));
@@ -776,7 +778,7 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
     }
 
     if (!building.thumbnail.has_value() && parsed.modelTgi.has_value() && thumbnailRenderer_) {
-        auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, kRenderedThumbnailSize);
+        auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, thumbnailSize_);
         if (rendered.has_value() && !rendered->pixels.empty()) {
             PreRendered preview;
             preview.data = rfl::Bytestring(std::move(rendered->pixels));
@@ -836,7 +838,7 @@ Prop ExemplarParser::propFromParsed(const ParsedPropExemplar& parsed) const {
     prop.randomChance = parsed.randomChance;
 
     if (parsed.modelTgi.has_value() && thumbnailRenderer_) {
-        auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, kRenderedThumbnailSize);
+        auto rendered = thumbnailRenderer_->renderModel(*parsed.modelTgi, thumbnailSize_);
         if (rendered.has_value() && !rendered->pixels.empty()) {
             PreRendered preview;
             preview.data = rfl::Bytestring(std::move(rendered->pixels));
