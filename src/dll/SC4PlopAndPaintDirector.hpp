@@ -73,6 +73,8 @@ public:
     [[nodiscard]] bool GetDefaultSnapPlacementsToGrid() const noexcept;
     [[nodiscard]] float GetDefaultGridStepMeters() const noexcept;
     [[nodiscard]] PreviewMode GetDefaultPropPreviewMode() const noexcept;
+    [[nodiscard]] ImU32 GetThumbnailBackgroundColor() const noexcept;
+    [[nodiscard]] ImU32 GetThumbnailBorderColor() const noexcept;
     void SetLotPlopPanelVisible(bool visible);
 
 private:
@@ -115,4 +117,6 @@ private:
     bool defaultSnapPointsToGrid_ = false;
     bool defaultSnapPlacementsToGrid_ = false;
     float defaultGridStepMeters_ = 16.0f;
+    ImU32 thumbnailBackgroundColor_ = IM_COL32(0, 0, 0, 0);
+    ImU32 thumbnailBorderColor_ = IM_COL32(0, 0, 0, 0);
 };

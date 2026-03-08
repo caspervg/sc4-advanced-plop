@@ -302,11 +302,7 @@ void BuildingsPanelTab::RenderBuildingRow_(const Building& building, const bool 
     }
     ImGui::SameLine();
     auto thumbTextureId = thumbnailCache_.Get(key);
-    if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
-        ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
-    } else {
-        ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-    }
+    RenderThumbnail_(thumbTextureId);
 
     // Name column
     ImGui::TableNextColumn();

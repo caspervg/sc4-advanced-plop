@@ -268,12 +268,7 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                                   ImVec2(0, rowHeight));
                 ImGui::SameLine();
                 auto thumbTextureId = thumbnailCache_.Get(key);
-                if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
-                    ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
-                }
-                else {
-                    ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-                }
+                RenderThumbnail_(thumbTextureId);
 
                 // Name
                 ImGui::TableNextColumn();

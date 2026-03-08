@@ -1,10 +1,13 @@
 #pragma once
 #include <cstdint>
+#include <optional>
 
 #include "../SC4PlopAndPaintDirector.hpp"
 #include "../favorites/FavoritesRepository.hpp"
 #include "../lots/LotRepository.hpp"
 #include "../props/PropRepository.hpp"
+#include "Constants.hpp"
+#include "ThumbnailUi.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -46,6 +49,15 @@ protected:
             ImGui::ClearActiveID();
             ImGui::SetWindowFocus(nullptr);
         }
+    }
+
+    void RenderThumbnail_(const std::optional<void*> textureId,
+                          const ImVec2 size = ImVec2(UI::kIconSize, UI::kIconSize)) const {
+        ThumbnailUi::Render(
+            textureId,
+            size,
+            director_ ? director_->GetThumbnailBackgroundColor() : IM_COL32(0, 0, 0, 0),
+            director_ ? director_->GetThumbnailBorderColor() : IM_COL32(0, 0, 0, 0));
     }
 
     SC4PlopAndPaintDirector* director_;  // game actions only

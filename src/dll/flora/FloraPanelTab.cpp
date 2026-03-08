@@ -255,12 +255,7 @@ void FloraPanelTab::RenderIndividualFloraTable_(const std::vector<size_t>& filte
                               ImVec2(0, rowHeight));
             ImGui::SameLine();
             auto thumbId = thumbnailCache_.Get(key);
-            if (thumbId.has_value() && *thumbId != nullptr) {
-                ImGui::Image(*thumbId, ImVec2(UI::kIconSize, UI::kIconSize));
-            }
-            else {
-                ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-            }
+            RenderThumbnail_(thumbId);
 
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(FloraDisplayName(f).c_str());

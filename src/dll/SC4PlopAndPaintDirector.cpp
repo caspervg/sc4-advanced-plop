@@ -76,6 +76,18 @@ bool SC4PlopAndPaintDirector::PostAppInit() {
     defaultSnapPointsToGrid_ = settings.GetDefaultSnapPointsToGrid();
     defaultSnapPlacementsToGrid_ = settings.GetDefaultSnapPlacementsToGrid();
     defaultGridStepMeters_ = settings.GetDefaultGridStepMeters();
+    const auto thumbnailBackgroundColor = settings.GetThumbnailBackgroundColor();
+    thumbnailBackgroundColor_ = IM_COL32(
+        thumbnailBackgroundColor[0],
+        thumbnailBackgroundColor[1],
+        thumbnailBackgroundColor[2],
+        thumbnailBackgroundColor[3]);
+    const auto thumbnailBorderColor = settings.GetThumbnailBorderColor();
+    thumbnailBorderColor_ = IM_COL32(
+        thumbnailBorderColor[0],
+        thumbnailBorderColor[1],
+        thumbnailBorderColor[2],
+        thumbnailBorderColor[3]);
     Logger::Shutdown();
     Logger::Initialize("SC4PlopAndPaint", logPath.string(), settings.GetLogToFile());
     Logger::SetLevel(settings.GetLogLevel());
@@ -552,6 +564,14 @@ float SC4PlopAndPaintDirector::GetDefaultGridStepMeters() const noexcept {
 
 PreviewMode SC4PlopAndPaintDirector::GetDefaultPropPreviewMode() const noexcept {
     return defaultPropPreviewMode_;
+}
+
+ImU32 SC4PlopAndPaintDirector::GetThumbnailBackgroundColor() const noexcept {
+    return thumbnailBackgroundColor_;
+}
+
+ImU32 SC4PlopAndPaintDirector::GetThumbnailBorderColor() const noexcept {
+    return thumbnailBorderColor_;
 }
 
 void SC4PlopAndPaintDirector::DrawOverlayCallback_(const DrawServicePass pass, const bool begin, void* pThis) {

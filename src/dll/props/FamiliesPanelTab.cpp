@@ -286,15 +286,10 @@ void FamiliesPanelTab::OnRender() {
                         thumbnailCache_.Request(key);
                     }
                     auto thumbTextureId = thumbnailCache_.Get(key);
-                    if (thumbTextureId.has_value() && *thumbTextureId != nullptr) {
-                        ImGui::Image(*thumbTextureId, ImVec2(UI::kIconSize, UI::kIconSize));
-                    }
-                    else {
-                        ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-                    }
+                    RenderThumbnail_(thumbTextureId);
                 }
                 else {
-                    ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
+                    RenderThumbnail_(std::nullopt);
                 }
 
                 ImGui::TableNextColumn();

@@ -4,6 +4,7 @@
 #include "mini/ini.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <exception>
 #include <string>
@@ -17,6 +18,8 @@ namespace {
     constexpr bool kDefaultSnapPointsToGrid = false;
     constexpr bool kDefaultSnapPlacementsToGrid = false;
     constexpr float kDefaultGridStepMeters = 16.0f;
+    constexpr std::array<uint8_t, 4> kDefaultThumbnailBackgroundColor = {0x42, 0x50, 0x66, 0xFF};
+    constexpr std::array<uint8_t, 4> kDefaultThumbnailBorderColor = {0x5B, 0x6B, 0x84, 0xFF};
 
     const std::string kSectionName = "SC4PlopAndPaint";
 
@@ -91,6 +94,54 @@ namespace {
         }
     }
 
+    std::array<uint8_t, 4> ParseHexColor(const std::string& value, bool& valid) {
+        std::string normalized;
+        normalized.reserve(value.size());
+
+        for (const unsigned char c : value) {
+            if (!std::isspace(c)) {
+                normalized.push_back(static_cast<char>(c));
+            }
+        }
+
+        if (!normalized.empty() && normalized.front() == '#') {
+            normalized.erase(normalized.begin());
+        }
+
+        if (normalized.empty()) {
+            valid = true;
+            return {0, 0, 0, 0};
+        }
+
+        if (normalized.size() != 6 && normalized.size() != 8) {
+            valid = false;
+            return kDefaultThumbnailBackgroundColor;
+        }
+
+        if (!std::ranges::all_of(normalized, [](const unsigned char c) { return std::isxdigit(c) != 0; })) {
+            valid = false;
+            return kDefaultThumbnailBackgroundColor;
+        }
+
+        try {
+            const auto parseComponent = [&normalized](const size_t offset) {
+                return static_cast<uint8_t>(std::stoul(normalized.substr(offset, 2), nullptr, 16));
+            };
+
+            valid = true;
+            return {
+                parseComponent(0),
+                parseComponent(2),
+                parseComponent(4),
+                normalized.size() == 8 ? parseComponent(6) : static_cast<uint8_t>(255)
+            };
+        }
+        catch (...) {
+            valid = false;
+            return kDefaultThumbnailBackgroundColor;
+        }
+    }
+
 } // namespace
 
 Settings::Settings()
@@ -101,7 +152,9 @@ Settings::Settings()
     , defaultShowGridOverlay_(kDefaultShowGridOverlay)
     , defaultSnapPointsToGrid_(kDefaultSnapPointsToGrid)
     , defaultSnapPlacementsToGrid_(kDefaultSnapPlacementsToGrid)
-    , defaultGridStepMeters_(kDefaultGridStepMeters) {}
+    , defaultGridStepMeters_(kDefaultGridStepMeters)
+    , thumbnailBackgroundColor_(kDefaultThumbnailBackgroundColor)
+    , thumbnailBorderColor_(kDefaultThumbnailBorderColor) {}
 
 void Settings::Load(const std::filesystem::path& settingsFilePath) {
     // Reset to defaults
@@ -213,6 +266,32 @@ void Settings::Load(const std::filesystem::path& settingsFilePath) {
                 defaultGridStepMeters_ = parsed;
             }
         }
+
+        if (section.has("ThumbnailBackgroundColor")) {
+            bool valid = false;
+            const std::string text = section.get("ThumbnailBackgroundColor");
+            thumbnailBackgroundColor_ = ParseHexColor(text, valid);
+            if (!valid) {
+                thumbnailBackgroundColor_ = kDefaultThumbnailBackgroundColor;
+                LOG_ERROR(
+                    "Invalid ThumbnailBackgroundColor value '{}' in {}. Using default 425066.",
+                    text,
+                    settingsFilePath.string());
+            }
+        }
+
+        if (section.has("ThumbnailBorderColor")) {
+            bool valid = false;
+            const std::string text = section.get("ThumbnailBorderColor");
+            thumbnailBorderColor_ = ParseHexColor(text, valid);
+            if (!valid) {
+                thumbnailBorderColor_ = kDefaultThumbnailBorderColor;
+                LOG_ERROR(
+                    "Invalid ThumbnailBorderColor value '{}' in {}. Using default 5B6B84.",
+                    text,
+                    settingsFilePath.string());
+            }
+        }
     }
     catch (const std::exception& e) {
         LOG_ERROR("Error reading settings file {}: {}", settingsFilePath.string(), e.what());
@@ -228,3 +307,5 @@ bool Settings::GetDefaultShowGridOverlay() const noexcept { return defaultShowGr
 bool Settings::GetDefaultSnapPointsToGrid() const noexcept { return defaultSnapPointsToGrid_; }
 bool Settings::GetDefaultSnapPlacementsToGrid() const noexcept { return defaultSnapPlacementsToGrid_; }
 float Settings::GetDefaultGridStepMeters() const noexcept { return defaultGridStepMeters_; }
+std::array<uint8_t, 4> Settings::GetThumbnailBackgroundColor() const noexcept { return thumbnailBackgroundColor_; }
+std::array<uint8_t, 4> Settings::GetThumbnailBorderColor() const noexcept { return thumbnailBorderColor_; }

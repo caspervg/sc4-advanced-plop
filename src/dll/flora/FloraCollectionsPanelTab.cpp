@@ -309,15 +309,10 @@ void FloraCollectionsPanelTab::RenderSelectedCollectionPanel_(const std::vector<
                     thumbnailCache_.Request(key);
                 }
                 auto thumbId = thumbnailCache_.Get(key);
-                if (thumbId.has_value() && *thumbId != nullptr) {
-                    ImGui::Image(*thumbId, ImVec2(UI::kIconSize, UI::kIconSize));
-                }
-                else {
-                    ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
-                }
+                RenderThumbnail_(thumbId);
             }
             else {
-                ImGui::Dummy(ImVec2(UI::kIconSize, UI::kIconSize));
+                RenderThumbnail_(std::nullopt);
             }
 
             ImGui::TableNextColumn();
