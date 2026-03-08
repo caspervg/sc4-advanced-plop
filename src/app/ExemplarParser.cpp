@@ -1,4 +1,5 @@
 #include "ExemplarParser.hpp"
+#include "FiraMono.hpp"
 #include "LTextReader.h"
 #include "ThumbnailRenderer.hpp"
 
@@ -35,25 +36,129 @@ namespace {
         uint32_t height = 0;
     };
 
-    PreRendered makeRenderFailedThumbnail(const uint32_t size) {
-        constexpr Color background{0, 0, 0, 0};
-        constexpr Color textShadow{12, 18, 28, 180};
-        constexpr Color text{232, 238, 246, 230};
+    Font getThumbnailFailureFont() {
+        struct FontHolder {
+            Font font{};
+            bool loaded = false;
 
-        Image image = GenImageColor(static_cast<int>(size), static_cast<int>(size), background);
-        const int fontSize = std::max(10, static_cast<int>(size / 11));
-        const int spacing = std::max(1, fontSize / 10);
-        const char* label = "RENDER FAILED";
-        const Vector2 labelSize = MeasureTextEx(GetFontDefault(), label, static_cast<float>(fontSize), static_cast<float>(spacing));
-        const float labelY = static_cast<float>(size) - labelSize.y - std::max(6.0f, static_cast<float>(size) / 14.0f);
-        const Vector2 labelPos{(static_cast<float>(size) - labelSize.x) * 0.5f, labelY};
+            ~FontHolder() {
+                if (loaded && IsFontValid(font)) {
+                    UnloadFont(font);
+                }
+            }
+        };
 
-        ImageDrawTextEx(&image, GetFontDefault(), label,
-                        Vector2{labelPos.x + 1.0f, labelPos.y + 1.0f},
-                        static_cast<float>(fontSize), static_cast<float>(spacing), textShadow);
-        ImageDrawTextEx(&image, GetFontDefault(), label,
-                        labelPos,
-                        static_cast<float>(fontSize), static_cast<float>(spacing), text);
+        static FontHolder holder;
+        static bool initialized = false;
+        if (!initialized) {
+            holder.font = LoadFontFromMemory(".ttf", FiraMonoBold, static_cast<int>(std::size(FiraMonoBold)), 64, nullptr, 0);
+            holder.loaded = IsFontValid(holder.font);
+            if (!holder.loaded) {
+                spdlog::warn("Failed to load embedded Fira Mono font, using raylib default font");
+            }
+            initialized = true;
+        }
+
+        return holder.loaded ? holder.font : GetFontDefault();
+    }
+
+    PreRendered makeRenderFailedThumbnail(const uint32_t size, const DBPF::Tgi* modelTgi = nullptr) {
+        constexpr Color background{0, 0, 0, 255};
+        constexpr Color text{245, 245, 235, 245};
+
+        Image image = GenImageColor(static_cast<int>(size), static_cast<int>(size), BLANK);
+        const Font font = getThumbnailFailureFont();
+        const int lineGap = std::max(4, static_cast<int>(size / 28));
+        const int padding = std::max(4, static_cast<int>(size / 28));
+        const Rectangle textRect{
+            static_cast<float>(padding),
+            static_cast<float>(padding),
+            static_cast<float>(size - padding * 2),
+            static_cast<float>(size - padding * 2)
+        };
+
+        char typeBuffer[16] = "????????";
+        char groupBuffer[16] = "????????";
+        char instanceBuffer[16] = "????????";
+        if (modelTgi) {
+            std::snprintf(typeBuffer, sizeof(typeBuffer), "%08X", modelTgi->type);
+            std::snprintf(groupBuffer, sizeof(groupBuffer), "%08X", modelTgi->group);
+            std::snprintf(instanceBuffer, sizeof(instanceBuffer), "%08X", modelTgi->instance);
+        }
+
+        const char* lines[4] = {
+            "TGI",
+            typeBuffer,
+            groupBuffer,
+            instanceBuffer
+        };
+        constexpr int kValueFontCandidates[] = {64, 56, 48, 40, 36, 32, 28, 24, 22, 20, 18, 16, 14, 12};
+        constexpr int kHeaderFontCandidates[] = {28, 24, 22, 20, 18, 16, 14, 12};
+        int headerFontSize = kHeaderFontCandidates[0];
+        int valueFontSize = kValueFontCandidates[0];
+        constexpr float kHeaderSpacing = 1.0f;
+        constexpr float kValueSpacing = 1.0f;
+        Vector2 lineSizes[4]{};
+        float contentHeight = 0.0f;
+
+        bool foundFit = false;
+        for (const int candidateValueFontSize : kValueFontCandidates) {
+            int candidateHeaderFontSize = kHeaderFontCandidates[std::size(kHeaderFontCandidates) - 1];
+            for (const int headerCandidate : kHeaderFontCandidates) {
+                if (headerCandidate <= candidateValueFontSize - 6) {
+                    candidateHeaderFontSize = headerCandidate;
+                    break;
+                }
+            }
+
+            contentHeight = 0.0f;
+            lineSizes[0] = MeasureTextEx(font, lines[0], static_cast<float>(candidateHeaderFontSize), kHeaderSpacing);
+            contentHeight += lineSizes[0].y;
+            float maxLineWidth = lineSizes[0].x;
+            for (int i = 1; i < 4; ++i) {
+                lineSizes[i] = MeasureTextEx(font, lines[i], static_cast<float>(candidateValueFontSize), kValueSpacing);
+                contentHeight += lineSizes[i].y;
+                maxLineWidth = std::max(maxLineWidth, lineSizes[i].x);
+            }
+            contentHeight += static_cast<float>(lineGap) * 3.0f;
+
+            const bool fitsWidth = maxLineWidth <= textRect.width;
+            const bool fitsHeight = contentHeight <= textRect.height;
+            if (fitsWidth && fitsHeight) {
+                valueFontSize = candidateValueFontSize;
+                headerFontSize = candidateHeaderFontSize;
+                foundFit = true;
+                break;
+            }
+        }
+
+        if (!foundFit) {
+            headerFontSize = kHeaderFontCandidates[std::size(kHeaderFontCandidates) - 1];
+            valueFontSize = kValueFontCandidates[std::size(kValueFontCandidates) - 1];
+            contentHeight = 0.0f;
+            lineSizes[0] = MeasureTextEx(font, lines[0], static_cast<float>(headerFontSize), kHeaderSpacing);
+            contentHeight += lineSizes[0].y;
+            for (int i = 1; i < 4; ++i) {
+                lineSizes[i] = MeasureTextEx(font, lines[i], static_cast<float>(valueFontSize), kValueSpacing);
+                contentHeight += lineSizes[i].y;
+            }
+            contentHeight += static_cast<float>(lineGap) * 3.0f;
+        }
+
+        float currentY = textRect.y + (textRect.height - contentHeight) * 0.5f;
+        for (int i = 0; i < 4; ++i) {
+            const float fontSize = static_cast<float>(i == 0 ? headerFontSize : valueFontSize);
+            const float spacing = i == 0 ? kHeaderSpacing : kValueSpacing;
+            const Vector2 linePos{
+                textRect.x + (textRect.width - lineSizes[i].x) * 0.5f,
+                currentY
+            };
+            ImageDrawTextEx(&image, font, lines[i], linePos, fontSize, spacing, text);
+            currentY += lineSizes[i].y;
+            if (i < 3) {
+                currentY += static_cast<float>(lineGap);
+            }
+        }
 
         ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
 
@@ -725,7 +830,7 @@ Flora ExemplarParser::floraFromParsed(const ParsedFloraExemplar& parsed) const {
             flora.thumbnail = preview;
         }
         else {
-            flora.thumbnail = makeRenderFailedThumbnail(thumbnailSize_);
+            flora.thumbnail = makeRenderFailedThumbnail(thumbnailSize_, &*parsed.modelTgi);
         }
     }
     return flora;
@@ -827,7 +932,7 @@ Building ExemplarParser::buildingFromParsed(const ParsedBuildingExemplar& parsed
         else {
             spdlog::debug("Thumbnail render failed for building {} ({})",
                           parsed.name, parsed.modelTgi->ToString());
-            building.thumbnail = makeRenderFailedThumbnail(thumbnailSize_);
+            building.thumbnail = makeRenderFailedThumbnail(thumbnailSize_, &*parsed.modelTgi);
         }
     }
 
@@ -888,7 +993,7 @@ Prop ExemplarParser::propFromParsed(const ParsedPropExemplar& parsed) const {
         else {
             spdlog::debug("Thumbnail render failed for prop {} ({})",
                           parsed.visibleName, parsed.modelTgi->ToString());
-            prop.thumbnail = makeRenderFailedThumbnail(thumbnailSize_);
+            prop.thumbnail = makeRenderFailedThumbnail(thumbnailSize_, &*parsed.modelTgi);
         }
     }
     return prop;

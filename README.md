@@ -118,5 +118,6 @@ ctest -C Debug --test-dir cmake-build-debug-visual-studio --output-on-failure
 | [ctre](https://github.com/hanickadot/compile-time-regular-expressions) | Compile-time regular expressions | Apache 2.0 |
 | [raylib](https://www.raylib.com) | 3D rendering for thumbnail generation | zlib |
 | [GLFW](https://www.glfw.org) | OpenGL windowing (raylib dependency) | zlib |
+| [Fira Mono](https://fonts.google.com/specimen/Fira+Mono) | Embedded monospace font | SIL Open Font License 1.1 |
 
 Full license texts are in [dist/ThirdPartyNotices.txt](dist/ThirdPartyNotices.txt).

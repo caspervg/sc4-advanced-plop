@@ -16,18 +16,14 @@ namespace thumb {
         constexpr auto kTypeIdFSH = 0x7AB50E44u;
         constexpr auto kTypeIdATC = 0x29A5D1ECu;
         constexpr bool kEnableSilhouettePostFit = true;
-        constexpr bool kFlipRightBasis = false;
-        constexpr bool kFlipUpBasis = false;
-        constexpr bool kFlipScreenOffsetX = false;
-        constexpr bool kFlipScreenOffsetY = false;
         constexpr uint32_t kSupersampleFactor = 2;
         constexpr uint8_t kAlphaFitThreshold = 12;
         constexpr float kPostFitMarginRatio = 0.08f;
         constexpr float kHorizontalPadding = 1.06f;
-        constexpr float kTopPadding = 1.12f;
-        constexpr float kBottomPadding = 1.04f;
+        constexpr float kTopPadding = 1.06;
+        constexpr float kBottomPadding = 1.06f;
         constexpr size_t kSc4ZoomCount = 5;
-        constexpr float kSc4DefaultYawRadians = 1.17809725; // 67.5 degrees
+        constexpr float kSc4DefaultYawRadians = 1.17809725f; // 67.5 degrees
         constexpr float kSc4DefaultPitchRadians[kSc4ZoomCount] = {
             0.52359879f, // 30 degrees
             0.61086524f, // 35 degrees
@@ -153,12 +149,8 @@ namespace thumb {
         // compute both viewport extents and the depth needed to keep the camera
         // in front of the closest geometry.
         Vector3 forward = Vector3Normalize(Vector3Negate(dir));
-        Vector3 right = kFlipRightBasis
-            ? Vector3Normalize(Vector3CrossProduct(camera.up, forward))
-            : Vector3Normalize(Vector3CrossProduct(forward, camera.up));
-        Vector3 camUp = kFlipUpBasis
-            ? Vector3Normalize(Vector3Negate(Vector3CrossProduct(right, forward)))
-            : Vector3Normalize(Vector3CrossProduct(right, forward));
+        Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
+        Vector3 camUp = Vector3Normalize(Vector3CrossProduct(right, forward));
 
         auto minRight = std::numeric_limits<float>::max();
         auto maxRight = std::numeric_limits<float>::lowest();
@@ -209,8 +201,8 @@ namespace thumb {
         const float nearMargin = std::max(maxDim * 0.25f, 4.0f);
         const float maxDistance = std::max(nearMargin, 900.0f - std::max(0.0f, maxForward));
         const float camDistance = std::clamp(-minForward + nearMargin, nearMargin, maxDistance);
-        const float targetOffsetX = kFlipScreenOffsetX ? -centerRight : centerRight;
-        const float targetOffsetY = kFlipScreenOffsetY ? -centerUp : centerUp;
+        const float targetOffsetX = centerRight;
+        const float targetOffsetY = centerUp;
         const Vector3 cameraTarget = Vector3Add(
             framingTarget,
             Vector3Add(Vector3Scale(right, targetOffsetX), Vector3Scale(camUp, targetOffsetY)));
@@ -219,11 +211,10 @@ namespace thumb {
         camera.fovy = orthoHalfSize * 2.0f;
 
         spdlog::trace(
-            "Thumbnail renderer camera for {}: maxDim={}, camDistance={}, orthoHalfSize={}, focusY={}, offset=({}, {}), depth=[{}, {}], sc4Camera[yaw={}, pitchZoom{}={}], toggles[rightFlip={}, upFlip={}, offsetXFlip={}, offsetYFlip={}]",
+            "Thumbnail renderer camera for {}: maxDim={}, camDistance={}, orthoHalfSize={}, focusY={}, offset=({}, {}), depth=[{}, {}], sc4Camera[yaw={}, pitchZoom{}={}]",
             tgi.ToString(), maxDim, camDistance, orthoHalfSize, framingTarget.y, targetOffsetX, targetOffsetY,
             minForward, maxForward, kSc4DefaultYawRadians, kThumbnailZoomIndex + 1,
-            kSc4DefaultPitchRadians[kThumbnailZoomIndex], kFlipRightBasis, kFlipUpBasis, kFlipScreenOffsetX,
-            kFlipScreenOffsetY);
+            kSc4DefaultPitchRadians[kThumbnailZoomIndex]);
 
         BeginTextureMode(target);
         ClearBackground(BLANK);
