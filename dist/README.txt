@@ -14,8 +14,10 @@ Installation instructions:
 - x64 (also installed): https://aka.ms/vs/17/release/vc_redist.x64.exe
 - Run the included SC4 Plop and Paint installer.
 - The installer will ask for your SimCity 4 game root and Plugins folder, verify the SC4RenderServices dependency, and install the plugin files. If SC4RenderServices is missing, the installer will stop and tell you where to download it.
+- The installer also lets you choose the thumbnail size used for cache generation and sets the same size in SC4PlopAndPaint.ini for the in-game UI.
 - The installer can also run the cache builder for you. If you skip that step, run Rebuild-Cache.ps1 later from Documents\SimCity 4\SC4PlopAndPaint\.
-- The cache builder scans your game and Plugins folders and writes lot_configs.cbor and props.cbor into your Plugins folder.
+- The cache builder scans your game and Plugins folders and writes lots.cbor, props.cbor and flora.cbor into your Plugins folder.
+- If thumbnail rendering is enabled, it also writes lot_thumbnails.bin, prop_thumbnails.bin and flora_thumbnails.bin into your Plugins folder.
 
 Usage instructions:
 - After installation, press O in game to open the lot plop and prop paint dialog.

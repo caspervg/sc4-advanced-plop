@@ -2,18 +2,18 @@
 
 # SC4 Plop and Paint
 
-SC4 Plop and Paint is a SimCity 4 plugin that adds an in-game panel for browsing lots, painting props, and building reusable weighted prop families.
+SC4 Plop and Paint is a SimCity 4 plugin that adds an in-game panel for browsing lots, painting props and flora, and building reusable collections for faster in-game placement.
 
 ## What it does
 
-`SC4PlopAndPaint.dll` adds an in-game window called `Advanced Plopping & Painting`. Press `O` in a loaded city to open it. The window is split into three tabs: `Buildings & Lots` for browsing and plopping lots, `Props` for painting individual props, and `Families` for managing and painting weighted random prop sets.
+`SC4PlopAndPaint.dll` adds an in-game window called `Advanced Plopping & Painting`. Press `O` in a loaded city to open it. The window is split into five tabs: `Buildings & Lots` for browsing and plopping lots, `Props` for painting individual props, `Prop Families` for managing and painting weighted random prop sets, `Flora` for browsing and painting individual flora, and `Flora Collections` for painting derived flora families and multi-stage chains.
 
 [![Watch the demo on YouTube](docs/images/painting.gif)](https://youtu.be/R7z5wg1KB7E)
 
 _Short demo clip. Click the animation to watch the full video on YouTube._
 
 
-`_SC4PlopAndPaintCacheBuilder.exe` scans your SimCity 4 plugin directories, parses exemplar and cohort data, and writes `lot_configs.cbor` and `props.cbor` into your Plugins folder. The DLL reads those cache files when the city loads, which is why rebuilding the cache matters whenever your plugin collection changes.
+`_SC4PlopAndPaintCacheBuilder.exe` scans your SimCity 4 plugin directories, parses exemplar and cohort data, and writes `lots.cbor`, `props.cbor`, and `flora.cbor` into your Plugins folder. When thumbnail rendering is enabled, it also writes `lot_thumbnails.bin`, `prop_thumbnails.bin`, and `flora_thumbnails.bin`. The DLL reads those cache files when the city loads, which is why rebuilding the cache matters whenever your plugin collection changes.
 
 ## Installation
 
@@ -31,8 +31,9 @@ The installer will:
 1. Ask for your game root and Plugins directory.
 2. Verify that `SC4RenderServices.dll` is already present in your Plugins folder. If it is missing, the installer will stop and direct you to the SC4RenderServices download page.
 3. Place `SC4PlopAndPaint.dll` and `SC4PlopAndPaint.dat` in your Plugins folder.
-4. Place `_SC4PlopAndPaintCacheBuilder.exe` and a generated `Rebuild-Cache.ps1` in `Documents\SimCity 4\SC4PlopAndPaint\`.
-5. Optionally run the cache builder immediately.
+4. Let you choose the thumbnail size used for cache generation and apply the same size to `ThumbnailDisplaySize` in `SC4PlopAndPaint.ini`.
+5. Place `_SC4PlopAndPaintCacheBuilder.exe` and a generated `Rebuild-Cache.ps1` in `Documents\SimCity 4\SC4PlopAndPaint\`.
+6. Optionally run the cache builder immediately.
 
 To rebuild the cache later, for example after adding or removing plugins, run `Rebuild-Cache.ps1`.
 
@@ -46,15 +47,31 @@ Quick summary:
 
 - `Buildings & Lots` is for browsing and plopping lots, including growables you want to place manually
 - `Props` is for browsing props, painting a single prop, and removing placed props with strip mode
-- `Families` is for building weighted prop palettes and painting with them in direct, line, or polygon mode
+- `Prop Families` is for building weighted prop palettes and painting with them in direct, line, or polygon mode
+- `Flora` is for browsing flora exemplars, painting one flora type, and favoriting individual flora
+- `Flora Collections` is for painting flora families and multi-stage chains derived from the cache
 - Paint mode supports grid controls, snapping, undo, line placement, polygon fills, and a live in-world status window
 
 If you just want the basics:
 
 1. Load a city and open the panel with the toggle shortcut (packaged default: `O`)
-2. Use `Paint` from `Props` or `Paint family` from `Families`
+2. Use `Paint` from `Props` or `Flora`, `Paint family` from `Prop Families`, or `Paint` from `Flora Collections`
 3. Choose a mode and options, then press `Start`
 4. Use `Enter` to generate and commit placements, `Ctrl+Z` / `Ctrl+Backspace` to undo, and `Esc` to cancel
+
+## Configuration
+
+`dist/SC4PlopAndPaint.ini` contains the main runtime defaults for the DLL.
+
+Notable options:
+
+- `LogLevel` and `LogToFile` control logging verbosity and file logging
+- `EnableDrawOverlay` disables or enables the draw-service overlay preview used while painting
+- `DefaultPropPreviewMode`, `DefaultShowGridOverlay`, `DefaultSnapPointsToGrid`, `DefaultSnapPlacementsToGrid`, and `DefaultGridStepMeters` control the default paint popup values
+- `ThumbnailDisplaySize` controls thumbnail size in the UI
+- `ThumbnailBackgroundColor` and `ThumbnailBorderColor` control the thumbnail slot styling used behind transparent thumbnails
+
+Color options accept `RRGGBB` or `RRGGBBAA`. Setting either thumbnail color option to an empty value makes it transparent.
 
 ## Building from source
 
