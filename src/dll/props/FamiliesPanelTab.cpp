@@ -164,13 +164,13 @@ void FamiliesPanelTab::OnRender() {
 
     if (ImGui::BeginChild("FamilyTableRegion", ImVec2(0, UI::familyTableHeight()), false)) {
         if (ImGui::BeginTable("FamiliesTable", 5, familyTableFlags, ImVec2(0, 0))) {
+            ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, UI::typeColumnWidth());
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Instance ID", ImGuiTableColumnFlags_WidthFixed, UI::instanceIdColumnWidth());
             ImGui::TableSetupColumn("Props", ImGuiTableColumnFlags_WidthFixed, UI::propsColumnWidth());
             ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, UI::familyActionColWidth());
             ImGui::TableHeadersRow();
-            ImGui::TableSetupScrollFreeze(0, 1);
 
             for (const auto& row : filteredFamilies) {
                 const bool selected = row.combinedIndex == selectedFamilyIndex_;
@@ -261,6 +261,7 @@ void FamiliesPanelTab::OnRender() {
         if (ImGui::BeginTable("FamilyEntries", selectedIsAuto ? 3 : 4,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
                               ImVec2(0, UI::familyEntriesHeight()))) {
+            ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, UI::iconColumnWidth());
             ImGui::TableSetupColumn("Prop", ImGuiTableColumnFlags_WidthStretch);
             if (!selectedIsAuto) {
@@ -268,7 +269,6 @@ void FamiliesPanelTab::OnRender() {
             }
             ImGui::TableSetupColumn("##remove", ImGuiTableColumnFlags_WidthFixed, selectedIsAuto ? 0.0f : UI::removeColumnWidth());
             ImGui::TableHeadersRow();
-            ImGui::TableSetupScrollFreeze(0, 1);
 
             // We need a mutable reference for weight editing / removal (user families only)
             int removeIndex = -1;

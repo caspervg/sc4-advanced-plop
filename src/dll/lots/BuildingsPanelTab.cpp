@@ -182,6 +182,7 @@ void BuildingsPanelTab::RenderBuildingsTable_(const float tableHeight) {
         ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable("BuildingsTable", 4, tableFlags, ImVec2(0, tableHeight))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Thumb",
                                 ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort,
                                 UI::iconColumnWidth());
@@ -193,7 +194,6 @@ void BuildingsPanelTab::RenderBuildingsTable_(const float tableHeight) {
         ImGui::TableSetupColumn("Lots",
                                 ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort,
                                 UI::lotsCountColumnWidth());
-        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 
         // Handle sorting
@@ -264,12 +264,12 @@ void BuildingsPanelTab::RenderLotsDetailTable_(const float tableHeight) {
         ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable("LotsDetailTable", 4, tableFlags, ImVec2(0, tableHeight))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, UI::lotSizeColumnWidth());
         ImGui::TableSetupColumn("Stage", ImGuiTableColumnFlags_WidthFixed, UI::lotStageColumnWidth());
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort,
                                 UI::actionColumnWidth());
-        ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 
         for (const auto& lot : selectedBuilding_->lots) {

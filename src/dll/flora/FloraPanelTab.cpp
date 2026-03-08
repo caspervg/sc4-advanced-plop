@@ -176,7 +176,6 @@ void FloraPanelTab::RenderIndividualFloraTable_(const std::vector<size_t>& filte
                             ImGuiTableColumnFlags_NoSort,
                             UI::actionColumnWidth());
     ImGui::TableHeadersRow();
-    ImGui::TableSetupScrollFreeze(0, 1);
 
     const auto& items = flora_->GetFloraItems();
     std::vector<size_t> sortedIndices(filteredIndices.begin(), filteredIndices.end());

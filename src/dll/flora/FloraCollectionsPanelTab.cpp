@@ -217,14 +217,13 @@ void FloraCollectionsPanelTab::RenderCollectionsTable_(const std::vector<FloraRe
     if (!ImGui::BeginTable("FloraCollectionsTable", 5, tableFlags, ImVec2(0, 0))) {
         return;
     }
-
+    ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, UI::typeColumnWidth());
     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("Instance ID", ImGuiTableColumnFlags_WidthFixed, UI::instanceIdColumnWidth());
     ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthFixed, UI::propsColumnWidth());
     ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, UI::familyActionColWidth());
     ImGui::TableHeadersRow();
-    ImGui::TableSetupScrollFreeze(0, 1);
 
     for (const size_t collectionIndex : filteredIndices) {
         const auto& collection = collections[collectionIndex];
