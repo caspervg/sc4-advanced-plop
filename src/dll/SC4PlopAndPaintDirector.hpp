@@ -99,7 +99,9 @@ private:
     void UpdatePaintPanels_();
     void SyncRecentPaintsCache_();
     void PersistRecentPaints_();
+    bool CanPrepareForPaintSwitch_(BasePainterInputControl* control, bool isPaintingFlag) const;
     bool PrepareForPaintSwitch_(BasePainterInputControl* control, bool& isPaintingFlag);
+    bool PrepareForExclusiveActivation_(bool keepPropPainting, bool keepFloraPainting, bool keepPropStripping);
     void ApplySwitchPolicy_(BasePainterInputControl* control);
     [[nodiscard]] RecentPaintEntry BuildRecentPaintEntry_(RecentPaintEntry::Kind kind,
                                                           uint32_t typeId,

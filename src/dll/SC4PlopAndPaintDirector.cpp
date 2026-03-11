@@ -467,8 +467,8 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
         return false;
     }
 
-    if (floraPainting_ && !PrepareForPaintSwitch_(floraPlacerControl_, floraPainting_)) {
-        LOG_INFO("Blocked prop paint switch while the active flora sketch is still in progress");
+    if (!PrepareForExclusiveActivation_(true, false, false)) {
+        LOG_INFO("Blocked prop paint switch while another tool still has a sketch in progress");
         return false;
     }
 
@@ -583,8 +583,8 @@ bool SC4PlopAndPaintDirector::StartFloraPainting(const uint32_t floraTypeId,
         return false;
     }
 
-    if (propPainting_ && !PrepareForPaintSwitch_(propPainterControl_, propPainting_)) {
-        LOG_INFO("Blocked flora paint switch while the active prop sketch is still in progress");
+    if (!PrepareForExclusiveActivation_(false, true, false)) {
+        LOG_INFO("Blocked flora paint switch while another tool still has a sketch in progress");
         return false;
     }
 
@@ -677,12 +677,8 @@ bool SC4PlopAndPaintDirector::StartPropStripping() {
         return false;
     }
 
-    if (propPainting_ && !PrepareForPaintSwitch_(propPainterControl_, propPainting_)) {
-        LOG_INFO("Blocked prop stripping while the active prop sketch is still in progress");
-        return false;
-    }
-    if (floraPainting_ && !PrepareForPaintSwitch_(floraPlacerControl_, floraPainting_)) {
-        LOG_INFO("Blocked prop stripping while the active flora sketch is still in progress");
+    if (!PrepareForExclusiveActivation_(false, false, true)) {
+        LOG_INFO("Blocked prop stripping while another tool still has a sketch in progress");
         return false;
     }
 
@@ -920,12 +916,21 @@ void SC4PlopAndPaintDirector::PersistRecentPaints_() {
     favoritesRepository_->Save();
 }
 
+bool SC4PlopAndPaintDirector::CanPrepareForPaintSwitch_(BasePainterInputControl* control,
+                                                        const bool isPaintingFlag) const {
+    if (!control || !isPaintingFlag) {
+        return true;
+    }
+
+    return !control->HasPendingSketch();
+}
+
 bool SC4PlopAndPaintDirector::PrepareForPaintSwitch_(BasePainterInputControl* control, bool& isPaintingFlag) {
     if (!control || !isPaintingFlag) {
         return true;
     }
 
-    if (control->HasPendingSketch()) {
+    if (!CanPrepareForPaintSwitch_(control, isPaintingFlag)) {
         return false;
     }
 
@@ -936,6 +941,32 @@ bool SC4PlopAndPaintDirector::PrepareForPaintSwitch_(BasePainterInputControl* co
     }
 
     isPaintingFlag = false;
+    return true;
+}
+
+bool SC4PlopAndPaintDirector::PrepareForExclusiveActivation_(const bool keepPropPainting,
+                                                             const bool keepFloraPainting,
+                                                             const bool keepPropStripping) {
+    if (!keepPropPainting && !CanPrepareForPaintSwitch_(propPainterControl_, propPainting_)) {
+        return false;
+    }
+
+    if (!keepFloraPainting && !CanPrepareForPaintSwitch_(floraPlacerControl_, floraPainting_)) {
+        return false;
+    }
+
+    if (!keepPropPainting) {
+        PrepareForPaintSwitch_(propPainterControl_, propPainting_);
+    }
+
+    if (!keepFloraPainting) {
+        PrepareForPaintSwitch_(floraPlacerControl_, floraPainting_);
+    }
+
+    if (!keepPropStripping && propStripping_) {
+        StopPropStripping();
+    }
+
     return true;
 }
 
