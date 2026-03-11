@@ -36,8 +36,12 @@ public:
     void SetCity(cISC4City* pCity);
     void SetCameraService(cIGZS3DCameraService* cameraService);
     void SetOnCancel(std::function<void()> onCancel);
+    void SetOnQuickSwap(std::function<void(size_t)> onQuickSwap);
 
     [[nodiscard]] const PropPaintSettings& GetSettings() const { return settings_; }
+    [[nodiscard]] bool HasPendingSketch() const;
+    [[nodiscard]] bool HasPendingCancel() const { return cancelPending_; }
+    [[nodiscard]] bool HasPendingPlacements() const;
     void ProcessPendingActions();
     void DrawOverlay(IDirect3DDevice7* device);
 
@@ -162,6 +166,7 @@ private:
     ControlState state_{ControlState::Uninitialized};
 
     std::function<void()> onCancel_{};
+    std::function<void(size_t)> onQuickSwap_{};
 
     struct UndoGroup {
         std::vector<cRZAutoRefCount<cISC4Occupant>> props;

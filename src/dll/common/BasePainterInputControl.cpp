@@ -180,6 +180,19 @@ void BasePainterInputControl::SetOnCancel(std::function<void()> onCancel) {
     onCancel_ = std::move(onCancel);
 }
 
+void BasePainterInputControl::SetOnQuickSwap(std::function<void(size_t)> onQuickSwap) {
+    onQuickSwap_ = std::move(onQuickSwap);
+}
+
+bool BasePainterInputControl::HasPendingSketch() const {
+    return (state_ == ControlState::ActiveLine || state_ == ControlState::ActivePolygon) &&
+        !collectedPoints_.empty();
+}
+
+bool BasePainterInputControl::HasPendingPlacements() const {
+    return PendingPlacementCount_() > 0;
+}
+
 void BasePainterInputControl::ProcessPendingActions() {
     if (cancelPending_) {
         cancelPending_ = false;
@@ -393,6 +406,12 @@ bool BasePainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const u
 
     if (!IsTargetActiveState_(state_)) {
         return false;
+    }
+
+    if (vkCode >= '1' && vkCode <= '8' && onQuickSwap_) {
+        const size_t index = static_cast<size_t>(vkCode - '0');
+        onQuickSwap_(index);
+        return true;
     }
 
     if (vkCode == 'R') {

@@ -472,7 +472,23 @@ void FamiliesPanelTab::QueuePaintForSelectedFamily_() {
         return;
     }
 
+    const bool isAutoFamily = IsSelectedAutoFamily_();
+    uint64_t sourceId = 0;
+    RecentPaintEntry::SourceKind sourceKind = RecentPaintEntry::SourceKind::PropAutoFamily;
+    if (isAutoFamily) {
+        const auto& autoFamilyIds = props_->GetAutoFamilyIds();
+        if (selectedFamilyIndex_ < autoFamilyIds.size()) {
+            sourceId = autoFamilyIds[selectedFamilyIndex_];
+        }
+    }
+    else {
+        sourceKind = RecentPaintEntry::SourceKind::PropUserFamily;
+        sourceId = family->persistentId.has_value() ? family->persistentId->value() : 0;
+    }
+
     pendingPaint_.fallbackPropId = family->entries.front().propID.value();
+    pendingPaint_.sourceKind = sourceKind;
+    pendingPaint_.sourceId = sourceId;
     pendingPaint_.familyName = family->name;
     pendingPaint_.settings = familyPaintDefaults_;
     pendingPaint_.settings.activePalette = family->entries;
@@ -585,10 +601,6 @@ bool FamiliesPanelTab::StartPaintingWithSelectedFamily_() {
 
     ReleaseImGuiInputCapture_();
 
-    if (director_->IsPropPainting()) {
-        director_->StopPropPainting();
-    }
-
     PropPaintSettings settings = pendingPaint_.settings;
     if (settings.randomSeed == 0) {
         settings.randomSeed = static_cast<uint32_t>(
@@ -599,7 +611,11 @@ bool FamiliesPanelTab::StartPaintingWithSelectedFamily_() {
     familyPaintDefaults_.activePalette.clear();
     familyPaintDefaults_.randomSeed = 0;
 
-    return director_->StartPropPainting(pendingPaint_.fallbackPropId, settings, pendingPaint_.familyName);
+    const RecentPaintSource source{
+        .sourceKind = pendingPaint_.sourceKind,
+        .sourceId = pendingPaint_.sourceId
+    };
+    return director_->StartPropPainting(pendingPaint_.fallbackPropId, settings, pendingPaint_.familyName, source);
 }
 
 const PropFamily* FamiliesPanelTab::GetSelectedFamily_() const {

@@ -3,26 +3,28 @@
 #include "SC4PlopAndPaintDirector.hpp"
 
 #include <cIGZFrameWork.h>
+#include <cstdio>
 #include <wil/resource.h>
 #include <wil/win32_helpers.h>
 
-#include "PlopAndPaintPanel.hpp"
 #include "cGZPersistResourceKey.h"
 #include "cIGZCommandParameterSet.h"
 #include "cIGZPersistResourceManager.h"
 #include "cIGZWinKeyAccelerator.h"
 #include "cIGZWinKeyAcceleratorRes.h"
 #include "cRZBaseVariant.h"
+#include "PlopAndPaintPanel.hpp"
 #include "common/Constants.hpp"
 #include "common/Utils.hpp"
 #include "favorites/FavoritesRepository.hpp"
 #include "flora/FloraRepository.hpp"
 #include "lots/LotRepository.hpp"
+#include "paint/RecentSwapPanel.hpp"
 #include "props/PropPainterInputControl.hpp"
 #include "props/PropRepository.hpp"
 #include "props/PropStripperInputControl.hpp"
-#include "public/S3DCameraServiceIds.h"
 #include "public/cIGZS3DCameraService.h"
+#include "public/S3DCameraServiceIds.h"
 #include "utils/Logger.h"
 #include "utils/Settings.h"
 
@@ -34,10 +36,90 @@ namespace {
 
     constexpr auto kLotPlopPanelId = 0xCA500001u;
     constexpr auto kStatusPanelId = 0xCA500002u;
+    constexpr auto kRecentSwapPanelId = 0xCA500003u;
     constexpr auto kToggleLotPlopWindowShortcutID = 0x9F21C3A1u;
     constexpr auto kKeyConfigType = 0xA2E3D533u;
     constexpr auto kKeyConfigGroup = 0x8F1E6D69u;
     constexpr auto kKeyConfigInstance = 0x5CBCFBF8u;
+
+    bool IsPaletteSource(const std::optional<RecentPaintSource>& source, const RecentPaintEntry::Kind kind) {
+        if (!source.has_value()) {
+            return false;
+        }
+
+        switch (source->sourceKind) {
+        case RecentPaintEntry::SourceKind::PropAutoFamily:
+        case RecentPaintEntry::SourceKind::PropUserFamily:
+        case RecentPaintEntry::SourceKind::FloraFamily:
+        case RecentPaintEntry::SourceKind::FloraChain:
+            return true;
+        case RecentPaintEntry::SourceKind::SingleProp:
+        case RecentPaintEntry::SourceKind::SingleFlora:
+            return false;
+        default:
+            return kind == RecentPaintEntry::Kind::Prop ? false : false;
+        }
+    }
+
+    PropPaintSettings NormalizePaintSettings(const PropPaintSettings& settings,
+                                             const std::optional<RecentPaintSource>& source,
+                                             const RecentPaintEntry::Kind kind) {
+        PropPaintSettings normalized = settings;
+        if (!IsPaletteSource(source, kind)) {
+            normalized.activePalette.clear();
+            normalized.randomSeed = 0;
+        }
+        return normalized;
+    }
+
+    const char* PaintSwitchPolicyToString(const PaintSwitchPolicy policy) {
+        switch (policy) {
+        case PaintSwitchPolicy::Discard:
+            return "discard";
+        case PaintSwitchPolicy::Commit:
+            return "commit";
+        case PaintSwitchPolicy::KeepPending:
+            return "keep";
+        }
+
+        return "unknown";
+    }
+
+    std::string ResolveRecentPaintName(const RecentPaintEntry::Kind kind,
+                                       const uint32_t typeId,
+                                       const std::string& requestedName,
+                                       const PropRepository* const propRepository,
+                                       const FloraRepository* const floraRepository) {
+        if (!requestedName.empty()) {
+            return requestedName;
+        }
+
+        if (kind == RecentPaintEntry::Kind::Prop) {
+            if (const Prop* prop = propRepository ? propRepository->FindPropByInstanceId(typeId) : nullptr) {
+                if (!prop->visibleName.empty()) {
+                    return prop->visibleName;
+                }
+                if (!prop->exemplarName.empty()) {
+                    return prop->exemplarName;
+                }
+            }
+            char buffer[24];
+            std::snprintf(buffer, sizeof(buffer), "Prop 0x%08X", typeId);
+            return buffer;
+        }
+
+        if (const Flora* flora = floraRepository ? floraRepository->FindFloraByInstanceId(typeId) : nullptr) {
+            if (!flora->visibleName.empty()) {
+                return flora->visibleName;
+            }
+            if (!flora->exemplarName.empty()) {
+                return flora->exemplarName;
+            }
+        }
+        char buffer[24];
+        std::snprintf(buffer, sizeof(buffer), "Flora 0x%08X", typeId);
+        return buffer;
+    }
 }
 
 SC4PlopAndPaintDirector::SC4PlopAndPaintDirector()
@@ -78,6 +160,13 @@ bool SC4PlopAndPaintDirector::PostAppInit() {
     defaultSnapPlacementsToGrid_ = settings.GetDefaultSnapPlacementsToGrid();
     defaultGridStepMeters_ = settings.GetDefaultGridStepMeters();
     UI::SetIconSize(settings.GetThumbnailDisplaySize());
+    enableRecentPaints_ = settings.GetEnableRecentPaints();
+    paintSwitchPolicy_ = settings.GetPaintSwitchPolicy();
+    recentPaints_.SetMaxEntries(settings.GetRecentPaintMaxItems());
+    LOG_INFO("Recent paints: enabled={}, maxItems={}, paintSwitchPolicy={}",
+             enableRecentPaints_,
+             recentPaints_.MaxEntries(),
+             PaintSwitchPolicyToString(paintSwitchPolicy_));
     const auto thumbnailBackgroundColor = settings.GetThumbnailBackgroundColor();
     thumbnailBackgroundColor_ = IM_COL32(
         thumbnailBackgroundColor[0],
@@ -175,6 +264,39 @@ bool SC4PlopAndPaintDirector::PostAppInit() {
             statusPanelRegistered_ = true;
             LOG_INFO("Registered status panel");
         }
+
+        if (enableRecentPaints_) {
+            swapPanel_ = std::make_unique<RecentSwapPanel>();
+            swapPanel_->SetDirector(this);
+            swapPanel_->SetRepositories(propRepository_.get(), floraRepository_.get(), imguiService_);
+            const ImGuiPanelDesc swapDesc = ImGuiPanelAdapter<RecentSwapPanel>::MakeDesc(
+                swapPanel_.get(), kRecentSwapPanelId, 102, true
+            );
+            if (imguiService_->RegisterPanel(swapDesc)) {
+                swapPanelRegistered_ = true;
+                LOG_INFO("Registered recent swap panel");
+            }
+        }
+
+        if (enableRecentPaints_) {
+            recentPaints_.Deserialize(favoritesRepository_->GetRecentPaintsData());
+            recentPaints_.Validate(
+                [this](const uint32_t id) { return propRepository_->FindPropByInstanceId(id) != nullptr; },
+                [this](const uint32_t id) { return floraRepository_->FindFloraByInstanceId(id) != nullptr; },
+                [this](const uint32_t id) {
+                    if (const auto* prop = propRepository_->FindPropByInstanceId(id)) {
+                        return MakeGIKey(prop->groupId.value(), prop->instanceId.value());
+                    }
+                    return 0ULL;
+                },
+                [this](const uint32_t id) {
+                    if (const auto* flora = floraRepository_->FindFloraByInstanceId(id)) {
+                        return MakeGIKey(flora->groupId.value(), flora->instanceId.value());
+                    }
+                    return 0ULL;
+                });
+            SyncRecentPaintsCache_();
+        }
     }
     else {
         LOG_WARN("ImGui service not found or not available");
@@ -187,6 +309,7 @@ bool SC4PlopAndPaintDirector::PreAppShutdown() { return true; }
 
 bool SC4PlopAndPaintDirector::PostAppShutdown() {
     UnregisterLotPlopShortcut_();
+    PersistRecentPaints_();
 
     if (pMS2_) {
         pMS2_->RemoveNotification(this, kSC4MessagePostCityInit);
@@ -225,6 +348,12 @@ bool SC4PlopAndPaintDirector::PostAppShutdown() {
         statusPanelRegistered_ = false;
     }
     statusPanel_.reset();
+
+    if (imguiService_ && swapPanelRegistered_) {
+        imguiService_->UnregisterPanel(kRecentSwapPanelId);
+        swapPanelRegistered_ = false;
+    }
+    swapPanel_.reset();
 
     if (imguiService_ && panelRegistered_) {
         SetLotPlopPanelVisible(false);
@@ -330,11 +459,20 @@ void SC4PlopAndPaintDirector::TriggerLotPlop(uint32_t lotInstanceId) const {
 }
 
 bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaintSettings& settings,
-                                                   const std::string& name) {
+                                                const std::string& name,
+                                                const std::optional<RecentPaintSource>& source) {
     if (!pCity_ || !pView3D_) {
         LOG_WARN("Cannot start prop painting: city or view not available");
         return false;
     }
+
+    if (floraPainting_ && !PrepareForPaintSwitch_(floraPlacerControl_, floraPainting_)) {
+        LOG_INFO("Blocked prop paint switch while the active flora sketch is still in progress");
+        return false;
+    }
+
+    const PropPaintSettings normalizedSettings =
+        NormalizePaintSettings(settings, source, RecentPaintEntry::Kind::Prop);
 
     if (!propPainterControl_) {
         auto* control = new PropPainterInputControl();
@@ -351,6 +489,21 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
         }
     }
 
+    const bool reusingActivePropControl =
+        propPainting_ && propPainterControl_ &&
+        pView3D_ && pView3D_->GetCurrentViewInputControl() == propPainterControl_;
+
+    if (reusingActivePropControl) {
+        if (propPainterControl_->HasPendingSketch()) {
+            LOG_INFO("Blocked prop paint switch while the current sketch is still in progress");
+            return false;
+        }
+        ApplySwitchPolicy_(propPainterControl_);
+    }
+
+    propPainterControl_->SetOnQuickSwap(enableRecentPaints_ ? std::function<void(size_t)>([this](const size_t index) {
+        ActivateRecentPaint(index);
+    }) : std::function<void(size_t)>());
     propPainterControl_->SetCity(pCity_);
     propPainterControl_->SetWindow(pView3D_->AsIGZWin());
     propPainterControl_->SetCameraService(cameraService_);
@@ -361,30 +514,33 @@ bool SC4PlopAndPaintDirector::StartPropPainting(uint32_t propId, const PropPaint
             pView3D_->RemoveCurrentViewInputControl(false);
         }
         propPainting_ = false;
-        if (statusPanel_) {
-            statusPanel_->SetVisible(false);
-        }
+        UpdatePaintPanels_();
         LOG_INFO("Stopped prop painting");
     });
 
-    propPainterControl_->SetPropToPaint(propId, settings, name);
-    if (!pView3D_->SetCurrentViewInputControl(
-        propPainterControl_,
-        cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
-        LOG_WARN("Failed to set prop painter as current view input control");
-        return false;
+    propPainterControl_->SetPropToPaint(propId, normalizedSettings, name);
+    if (!reusingActivePropControl) {
+        if (!pView3D_->SetCurrentViewInputControl(
+            propPainterControl_,
+            cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
+            LOG_WARN("Failed to set prop painter as current view input control");
+            UpdatePaintPanels_();
+            return false;
+        }
     }
 
     propPainting_ = true;
-    if (statusPanel_) {
-        statusPanel_->SetActiveControl(propPainterControl_);
-        statusPanel_->SetVisible(true);
+    if (enableRecentPaints_) {
+        recentPaints_.Push(BuildRecentPaintEntry_(RecentPaintEntry::Kind::Prop, propId, normalizedSettings, name, source));
+        SyncRecentPaintsCache_();
     }
-    LOG_INFO("Started prop painting: 0x{:08X}, rotation {}", propId, settings.rotation);
+    UpdatePaintPanels_();
+    LOG_INFO("Started prop painting: 0x{:08X}, rotation {}", propId, normalizedSettings.rotation);
     return true;
 }
 
-bool SC4PlopAndPaintDirector::SwitchPropPaintingTarget(uint32_t propId, const std::string& name) {
+bool SC4PlopAndPaintDirector::SwitchPropPaintingTarget(uint32_t propId, const std::string& name,
+                                                       const std::optional<RecentPaintSource>& source) {
     if (!propPainterControl_ || !propPainting_ || !pView3D_) {
         return false;
     }
@@ -392,8 +548,9 @@ bool SC4PlopAndPaintDirector::SwitchPropPaintingTarget(uint32_t propId, const st
         return false;
     }
 
-    const auto& settings = propPainterControl_->GetSettings();
-    return StartPropPainting(propId, settings, name);
+    PropPaintSettings settings = propPainterControl_->GetSettings();
+    settings = NormalizePaintSettings(settings, source, RecentPaintEntry::Kind::Prop);
+    return StartPropPainting(propId, settings, name, source);
 }
 
 void SC4PlopAndPaintDirector::StopPropPainting() {
@@ -408,9 +565,7 @@ void SC4PlopAndPaintDirector::StopPropPainting() {
     }
 
     propPainting_ = false;
-    if (statusPanel_) {
-        statusPanel_->SetVisible(false);
-    }
+    UpdatePaintPanels_();
     LOG_INFO("Stopped prop painting");
 }
 
@@ -419,12 +574,21 @@ bool SC4PlopAndPaintDirector::IsPropPainting() const {
 }
 
 bool SC4PlopAndPaintDirector::StartFloraPainting(const uint32_t floraTypeId,
-                                                   const PropPaintSettings& settings,
-                                                   const std::string& name) {
+                                                 const PropPaintSettings& settings,
+                                                 const std::string& name,
+                                                 const std::optional<RecentPaintSource>& source) {
     if (!pCity_ || !pView3D_) {
         LOG_WARN("Cannot start flora painting: city or view not available");
         return false;
     }
+
+    if (propPainting_ && !PrepareForPaintSwitch_(propPainterControl_, propPainting_)) {
+        LOG_INFO("Blocked flora paint switch while the active prop sketch is still in progress");
+        return false;
+    }
+
+    const PropPaintSettings normalizedSettings =
+        NormalizePaintSettings(settings, source, RecentPaintEntry::Kind::Flora);
 
     if (!floraPlacerControl_) {
         auto* control = new FloraPainterInputControl();
@@ -436,6 +600,21 @@ bool SC4PlopAndPaintDirector::StartFloraPainting(const uint32_t floraTypeId,
         }
     }
 
+    const bool reusingActiveFloraControl =
+        floraPainting_ && floraPlacerControl_ &&
+        pView3D_ && pView3D_->GetCurrentViewInputControl() == floraPlacerControl_;
+
+    if (reusingActiveFloraControl) {
+        if (floraPlacerControl_->HasPendingSketch()) {
+            LOG_INFO("Blocked flora paint switch while the current sketch is still in progress");
+            return false;
+        }
+        ApplySwitchPolicy_(floraPlacerControl_);
+    }
+
+    floraPlacerControl_->SetOnQuickSwap(enableRecentPaints_ ? std::function<void(size_t)>([this](const size_t index) {
+        ActivateRecentPaint(index);
+    }) : std::function<void(size_t)>());
     floraPlacerControl_->SetCity(pCity_);
     floraPlacerControl_->SetWindow(pView3D_->AsIGZWin());
     floraPlacerControl_->SetCameraService(cameraService_);
@@ -446,25 +625,27 @@ bool SC4PlopAndPaintDirector::StartFloraPainting(const uint32_t floraTypeId,
             pView3D_->RemoveCurrentViewInputControl(false);
         }
         floraPainting_ = false;
-        if (statusPanel_) {
-            statusPanel_->SetVisible(false);
-        }
+        UpdatePaintPanels_();
         LOG_INFO("Stopped flora painting");
     });
 
-    floraPlacerControl_->SetFloraToPaint(floraTypeId, settings, name);
-    if (!pView3D_->SetCurrentViewInputControl(
-        floraPlacerControl_,
-        cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
-        LOG_WARN("Failed to set flora placer as current view input control");
-        return false;
+    floraPlacerControl_->SetFloraToPaint(floraTypeId, normalizedSettings, name);
+    if (!reusingActiveFloraControl) {
+        if (!pView3D_->SetCurrentViewInputControl(
+            floraPlacerControl_,
+            cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
+            LOG_WARN("Failed to set flora placer as current view input control");
+            UpdatePaintPanels_();
+            return false;
+        }
     }
 
     floraPainting_ = true;
-    if (statusPanel_) {
-        statusPanel_->SetActiveControl(floraPlacerControl_);
-        statusPanel_->SetVisible(true);
+    if (enableRecentPaints_) {
+        recentPaints_.Push(BuildRecentPaintEntry_(RecentPaintEntry::Kind::Flora, floraTypeId, normalizedSettings, name, source));
+        SyncRecentPaintsCache_();
     }
+    UpdatePaintPanels_();
     LOG_INFO("Started flora painting: 0x{:08X}", floraTypeId);
     return true;
 }
@@ -481,9 +662,7 @@ void SC4PlopAndPaintDirector::StopFloraPainting() {
     }
 
     floraPainting_ = false;
-    if (statusPanel_) {
-        statusPanel_->SetVisible(false);
-    }
+    UpdatePaintPanels_();
     LOG_INFO("Stopped flora painting");
 }
 
@@ -497,8 +676,13 @@ bool SC4PlopAndPaintDirector::StartPropStripping() {
         return false;
     }
 
-    if (propPainting_) {
-        StopPropPainting();
+    if (propPainting_ && !PrepareForPaintSwitch_(propPainterControl_, propPainting_)) {
+        LOG_INFO("Blocked prop stripping while the active prop sketch is still in progress");
+        return false;
+    }
+    if (floraPainting_ && !PrepareForPaintSwitch_(floraPlacerControl_, floraPainting_)) {
+        LOG_INFO("Blocked prop stripping while the active flora sketch is still in progress");
+        return false;
     }
 
     if (!propStripperControl_) {
@@ -519,6 +703,7 @@ bool SC4PlopAndPaintDirector::StartPropStripping() {
             pView3D_->RemoveCurrentViewInputControl(false);
         }
         propStripping_ = false;
+        UpdatePaintPanels_();
         LOG_INFO("Stopped prop stripping");
     });
 
@@ -526,6 +711,7 @@ bool SC4PlopAndPaintDirector::StartPropStripping() {
         propStripperControl_,
         cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
         LOG_WARN("Failed to set prop stripper as current view input control");
+        UpdatePaintPanels_();
         return false;
     }
 
@@ -541,11 +727,68 @@ void SC4PlopAndPaintDirector::StopPropStripping() {
         }
     }
     propStripping_ = false;
+    UpdatePaintPanels_();
     LOG_INFO("Stopped prop stripping");
 }
 
 bool SC4PlopAndPaintDirector::IsPropStripping() const {
     return propStripping_;
+}
+
+BasePainterInputControl* SC4PlopAndPaintDirector::GetActivePainterControl() const {
+    if (!pView3D_) {
+        return nullptr;
+    }
+
+    auto* currentControl = pView3D_->GetCurrentViewInputControl();
+    if (propPainterControl_ && currentControl == propPainterControl_) {
+        return propPainterControl_;
+    }
+    if (floraPlacerControl_ && currentControl == floraPlacerControl_) {
+        return floraPlacerControl_;
+    }
+
+    return nullptr;
+}
+
+const RecentPaintHistory& SC4PlopAndPaintDirector::GetRecentPaintHistory() const {
+    return recentPaints_;
+}
+
+bool SC4PlopAndPaintDirector::ActivateRecentPaint(const size_t index) {
+    if (!enableRecentPaints_) {
+        return false;
+    }
+
+    BasePainterInputControl* activeControl = GetActivePainterControl();
+    if (!activeControl || activeControl->HasPendingCancel() || activeControl->HasPendingSketch()) {
+        return false;
+    }
+    if (index == 0 || index >= recentPaints_.Size()) {
+        return false;
+    }
+
+    const RecentPaintEntry entry = recentPaints_.Entries()[index];
+    PropPaintSettings settings = activeControl->GetSettings();
+    settings.activePalette = entry.palette;
+    settings.randomSeed = 0;
+
+    const RecentPaintSource source{
+        .sourceKind = entry.sourceKind,
+        .sourceId = entry.sourceId
+    };
+
+    if (entry.kind == RecentPaintEntry::Kind::Prop) {
+        if (entry.palette.empty() &&
+            propPainterControl_ &&
+            pView3D_ &&
+            pView3D_->GetCurrentViewInputControl() == propPainterControl_) {
+            return SwitchPropPaintingTarget(entry.typeId, entry.name, source);
+        }
+        return StartPropPainting(entry.typeId, settings, entry.name, source);
+    }
+
+    return StartFloraPainting(entry.typeId, settings, entry.name, source);
 }
 
 bool SC4PlopAndPaintDirector::GetDefaultShowGridOverlay() const noexcept {
@@ -636,6 +879,118 @@ void SC4PlopAndPaintDirector::SetLotPlopPanelVisible(const bool visible) {
     panel_->SetOpen(visible);
 }
 
+void SC4PlopAndPaintDirector::UpdatePaintPanels_() {
+    BasePainterInputControl* activeControl = GetActivePainterControl();
+
+    if (statusPanel_) {
+        if (activeControl) {
+            statusPanel_->SetActiveControl(activeControl);
+            statusPanel_->SetVisible(true);
+        }
+        else {
+            statusPanel_->SetVisible(false);
+        }
+    }
+
+    if (swapPanel_ && enableRecentPaints_) {
+        swapPanel_->SetVisible(activeControl != nullptr && !recentPaints_.Empty());
+    }
+    else if (swapPanel_) {
+        swapPanel_->SetVisible(false);
+    }
+}
+
+void SC4PlopAndPaintDirector::SyncRecentPaintsCache_() {
+    if (enableRecentPaints_ && favoritesRepository_) {
+        favoritesRepository_->SetRecentPaintsData(recentPaints_.Serialize());
+    }
+    UpdatePaintPanels_();
+}
+
+void SC4PlopAndPaintDirector::PersistRecentPaints_() {
+    if (!enableRecentPaints_ || !favoritesRepository_) {
+        return;
+    }
+
+    favoritesRepository_->SetRecentPaintsData(recentPaints_.Serialize());
+    favoritesRepository_->Save();
+}
+
+bool SC4PlopAndPaintDirector::PrepareForPaintSwitch_(BasePainterInputControl* control, bool& isPaintingFlag) {
+    if (!control || !isPaintingFlag) {
+        return true;
+    }
+
+    if (control->HasPendingSketch()) {
+        return false;
+    }
+
+    ApplySwitchPolicy_(control);
+
+    if (pView3D_ && pView3D_->GetCurrentViewInputControl() == control) {
+        pView3D_->RemoveCurrentViewInputControl(false);
+    }
+
+    isPaintingFlag = false;
+    return true;
+}
+
+void SC4PlopAndPaintDirector::ApplySwitchPolicy_(BasePainterInputControl* control) {
+    if (!control) {
+        return;
+    }
+
+    switch (paintSwitchPolicy_) {
+    case PaintSwitchPolicy::Discard:
+        control->CancelAllPlacements();
+        break;
+    case PaintSwitchPolicy::Commit:
+        if (control->HasPendingPlacements()) {
+            control->CommitPlacements();
+        }
+        break;
+    case PaintSwitchPolicy::KeepPending:
+        break;
+    }
+}
+
+RecentPaintEntry SC4PlopAndPaintDirector::BuildRecentPaintEntry_(
+    const RecentPaintEntry::Kind kind,
+    const uint32_t typeId,
+    const PropPaintSettings& settings,
+    const std::string& name,
+    const std::optional<RecentPaintSource>& source) const {
+    RecentPaintEntry entry;
+    entry.kind = kind;
+    entry.typeId = typeId;
+    entry.name = ResolveRecentPaintName(kind, typeId, name, propRepository_.get(), floraRepository_.get());
+    entry.palette = settings.activePalette;
+
+    if (source.has_value()) {
+        entry.sourceKind = source->sourceKind;
+        entry.sourceId = source->sourceId;
+    }
+    else if (kind == RecentPaintEntry::Kind::Prop) {
+        entry.sourceKind = RecentPaintEntry::SourceKind::SingleProp;
+        entry.sourceId = typeId;
+    }
+    else {
+        entry.sourceKind = RecentPaintEntry::SourceKind::SingleFlora;
+        entry.sourceId = typeId;
+    }
+
+    if (kind == RecentPaintEntry::Kind::Prop) {
+        if (const Prop* prop = propRepository_ ? propRepository_->FindPropByInstanceId(typeId) : nullptr) {
+            entry.thumbnailKey = MakeGIKey(prop->groupId.value(), prop->instanceId.value());
+        }
+    }
+    else if (const Flora* flora = floraRepository_ ? floraRepository_->FindFloraByInstanceId(typeId) : nullptr) {
+        entry.thumbnailKey = MakeGIKey(flora->groupId.value(), flora->instanceId.value());
+    }
+
+    return entry;
+}
+
 void SC4PlopAndPaintDirector::PostCityInit_(const cIGZMessage2Standard* pStandardMsg) {
     pCity_ = static_cast<cISC4City*>(pStandardMsg->GetVoid1());
 
@@ -656,10 +1011,14 @@ void SC4PlopAndPaintDirector::PostCityInit_(const cIGZMessage2Standard* pStandar
 }
 
 void SC4PlopAndPaintDirector::PreCityShutdown_(cIGZMessage2Standard* pStandardMsg) {
+    PersistRecentPaints_();
     SetLotPlopPanelVisible(false);
     StopPropStripping();
     StopPropPainting();
     StopFloraPainting();
+    if (swapPanel_) {
+        swapPanel_->SetVisible(false);
+    }
     if (propStripperControl_) {
         propStripperControl_->SetCity(nullptr);
     }

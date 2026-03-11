@@ -23,6 +23,9 @@ namespace {
     constexpr float kDefaultThumbnailDisplaySize = 44.0f;
     constexpr std::array<uint8_t, 4> kDefaultThumbnailBackgroundColor = {0x42, 0x50, 0x66, 0xFF};
     constexpr std::array<uint8_t, 4> kDefaultThumbnailBorderColor = {0x5B, 0x6B, 0x84, 0xFF};
+    constexpr bool kDefaultEnableRecentPaints = true;
+    constexpr size_t kDefaultRecentPaintMaxItems = 8;
+    constexpr auto kDefaultPaintSwitchPolicy = PaintSwitchPolicy::KeepPending;
 
     const std::string kSectionName = "SC4PlopAndPaint";
 
@@ -97,6 +100,39 @@ namespace {
         }
     }
 
+    size_t ParseSizeT(const std::string& value, bool& valid) {
+        try {
+            size_t parsedChars = 0;
+            const auto parsed = std::stoul(value, &parsedChars);
+            valid = parsedChars == value.size();
+            return valid ? static_cast<size_t>(parsed) : 0;
+        }
+        catch (...) {
+            valid = false;
+            return 0;
+        }
+    }
+
+    PaintSwitchPolicy ParsePaintSwitchPolicy(const std::string& value, bool& valid) {
+        const std::string normalized = ToLower(value);
+
+        if (normalized == "discard") {
+            valid = true;
+            return PaintSwitchPolicy::Discard;
+        }
+        if (normalized == "commit") {
+            valid = true;
+            return PaintSwitchPolicy::Commit;
+        }
+        if (normalized == "keep") {
+            valid = true;
+            return PaintSwitchPolicy::KeepPending;
+        }
+
+        valid = false;
+        return kDefaultPaintSwitchPolicy;
+    }
+
     std::array<uint8_t, 4> ParseHexColor(const std::string& value, bool& valid) {
         std::string normalized;
         normalized.reserve(value.size());
@@ -158,7 +194,10 @@ Settings::Settings()
     , defaultGridStepMeters_(kDefaultGridStepMeters)
     , thumbnailDisplaySize_(kDefaultThumbnailDisplaySize)
     , thumbnailBackgroundColor_(kDefaultThumbnailBackgroundColor)
-    , thumbnailBorderColor_(kDefaultThumbnailBorderColor) {}
+    , thumbnailBorderColor_(kDefaultThumbnailBorderColor)
+    , enableRecentPaints_(kDefaultEnableRecentPaints)
+    , recentPaintMaxItems_(kDefaultRecentPaintMaxItems)
+    , paintSwitchPolicy_(kDefaultPaintSwitchPolicy) {}
 
 void Settings::Load(const std::filesystem::path& settingsFilePath) {
     // Reset to defaults
@@ -310,6 +349,42 @@ void Settings::Load(const std::filesystem::path& settingsFilePath) {
                     settingsFilePath.string());
             }
         }
+
+        if (section.has("EnableRecentPaints")) {
+            bool valid = false;
+            const std::string text = section.get("EnableRecentPaints");
+            enableRecentPaints_ = ParseBool(text, valid);
+            if (!valid) {
+                enableRecentPaints_ = kDefaultEnableRecentPaints;
+                LOG_ERROR("Invalid EnableRecentPaints value '{}' in {}. Using default true.", text,
+                          settingsFilePath.string());
+            }
+        }
+
+        if (section.has("RecentPaintMaxItems")) {
+            bool valid = false;
+            const std::string text = section.get("RecentPaintMaxItems");
+            const size_t parsed = ParseSizeT(text, valid);
+            if (!valid || parsed < 1 || parsed > 16) {
+                recentPaintMaxItems_ = kDefaultRecentPaintMaxItems;
+                LOG_ERROR("Invalid RecentPaintMaxItems value '{}' in {}. Using default 8.", text,
+                          settingsFilePath.string());
+            }
+            else {
+                recentPaintMaxItems_ = parsed;
+            }
+        }
+
+        if (section.has("PaintSwitchPolicy")) {
+            bool valid = false;
+            const std::string text = section.get("PaintSwitchPolicy");
+            paintSwitchPolicy_ = ParsePaintSwitchPolicy(text, valid);
+            if (!valid) {
+                paintSwitchPolicy_ = kDefaultPaintSwitchPolicy;
+                LOG_ERROR("Invalid PaintSwitchPolicy value '{}' in {}. Using default keep.", text,
+                          settingsFilePath.string());
+            }
+        }
     }
     catch (const std::exception& e) {
         LOG_ERROR("Error reading settings file {}: {}", settingsFilePath.string(), e.what());
@@ -328,3 +403,6 @@ float Settings::GetDefaultGridStepMeters() const noexcept { return defaultGridSt
 float Settings::GetThumbnailDisplaySize() const noexcept { return thumbnailDisplaySize_; }
 std::array<uint8_t, 4> Settings::GetThumbnailBackgroundColor() const noexcept { return thumbnailBackgroundColor_; }
 std::array<uint8_t, 4> Settings::GetThumbnailBorderColor() const noexcept { return thumbnailBorderColor_; }
+bool Settings::GetEnableRecentPaints() const noexcept { return enableRecentPaints_; }
+size_t Settings::GetRecentPaintMaxItems() const noexcept { return recentPaintMaxItems_; }
+PaintSwitchPolicy Settings::GetPaintSwitchPolicy() const noexcept { return paintSwitchPolicy_; }

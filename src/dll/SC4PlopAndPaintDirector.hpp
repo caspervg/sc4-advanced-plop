@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include "../shared/entities.hpp"
+#include "RecentPaintHistory.hpp"
 #include "GZServPtrs.h"
 #include "cIGZCommandServer.h"
 #include "cIGZMessage2Standard.h"
@@ -27,6 +29,7 @@
 #include "public/ImGuiServiceIds.h"
 #include "public/cIGZDrawService.h"
 #include "public/cIGZImGuiService.h"
+#include "utils/Settings.h"
 
 class PlopAndPaintPanel;
 class FloraRepository;
@@ -34,6 +37,7 @@ class LotRepository;
 class PropRepository;
 class FavoritesRepository;
 class cIGZS3DCameraService;
+class RecentSwapPanel;
 
 static constexpr uint32_t kSC4MessagePostCityInit = 0x26D31EC1;
 static constexpr uint32_t kSC4MessagePreCityShutdown = 0x26D31EC2;
@@ -58,16 +62,22 @@ public:
     bool DoMessage(cIGZMessage2* pMsg) override;
 
     void TriggerLotPlop(uint32_t lotInstanceId) const;
-    bool StartPropPainting(uint32_t propId, const PropPaintSettings& settings, const std::string& name);
-    bool SwitchPropPaintingTarget(uint32_t propId, const std::string& name);
+    bool StartPropPainting(uint32_t propId, const PropPaintSettings& settings, const std::string& name,
+                           const std::optional<RecentPaintSource>& source = std::nullopt);
+    bool SwitchPropPaintingTarget(uint32_t propId, const std::string& name,
+                                  const std::optional<RecentPaintSource>& source = std::nullopt);
     void StopPropPainting();
     [[nodiscard]] bool IsPropPainting() const;
-    bool StartFloraPainting(uint32_t floraTypeId, const PropPaintSettings& settings, const std::string& name);
+    bool StartFloraPainting(uint32_t floraTypeId, const PropPaintSettings& settings, const std::string& name,
+                            const std::optional<RecentPaintSource>& source = std::nullopt);
     void StopFloraPainting();
     [[nodiscard]] bool IsFloraPainting() const;
     bool StartPropStripping();
     void StopPropStripping();
     [[nodiscard]] bool IsPropStripping() const;
+    [[nodiscard]] BasePainterInputControl* GetActivePainterControl() const;
+    [[nodiscard]] const RecentPaintHistory& GetRecentPaintHistory() const;
+    bool ActivateRecentPaint(size_t index);
     [[nodiscard]] bool GetDefaultShowGridOverlay() const noexcept;
     [[nodiscard]] bool GetDefaultSnapPointsToGrid() const noexcept;
     [[nodiscard]] bool GetDefaultSnapPlacementsToGrid() const noexcept;
@@ -85,6 +95,16 @@ private:
     void UnregisterLotPlopShortcut_();
     static std::filesystem::path GetUserPluginsPath_();
     static void DrawOverlayCallback_(DrawServicePass pass, bool begin, void* pThis);
+    void UpdatePaintPanels_();
+    void SyncRecentPaintsCache_();
+    void PersistRecentPaints_();
+    bool PrepareForPaintSwitch_(BasePainterInputControl* control, bool& isPaintingFlag);
+    void ApplySwitchPolicy_(BasePainterInputControl* control);
+    [[nodiscard]] RecentPaintEntry BuildRecentPaintEntry_(RecentPaintEntry::Kind kind,
+                                                          uint32_t typeId,
+                                                          const PropPaintSettings& settings,
+                                                          const std::string& name,
+                                                          const std::optional<RecentPaintSource>& source) const;
 
 private:
     cIGZImGuiService* imguiService_ = nullptr;
@@ -111,6 +131,11 @@ private:
     bool propStripping_{false};
     std::unique_ptr<PaintStatusPanel> statusPanel_;
     bool statusPanelRegistered_{false};
+    std::unique_ptr<RecentSwapPanel> swapPanel_;
+    bool swapPanelRegistered_{false};
+    RecentPaintHistory recentPaints_{};
+    bool enableRecentPaints_{true};
+    PaintSwitchPolicy paintSwitchPolicy_{PaintSwitchPolicy::KeepPending};
     uint32_t drawCallbackToken_{0};
     PreviewMode defaultPropPreviewMode_ = PreviewMode::Outline;
     bool defaultShowGridOverlay_ = true;

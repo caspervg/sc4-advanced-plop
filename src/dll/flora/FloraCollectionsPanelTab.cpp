@@ -446,7 +446,11 @@ void FloraCollectionsPanelTab::RenderPaintModal_() {
 
     if (ImGui::Button("Start")) {
         ReleaseImGuiInputCapture_();
-        director_->StartFloraPainting(pendingPaint_.typeId, pendingPaint_.settings, pendingPaint_.name);
+        const RecentPaintSource source{
+            .sourceKind = pendingPaint_.sourceKind,
+            .sourceId = pendingPaint_.sourceId
+        };
+        director_->StartFloraPainting(pendingPaint_.typeId, pendingPaint_.settings, pendingPaint_.name, source);
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
@@ -459,6 +463,10 @@ void FloraCollectionsPanelTab::RenderPaintModal_() {
 
 void FloraCollectionsPanelTab::QueuePaintForCollection_(const FloraRepository::FloraCollection& collection) {
     pendingPaint_.typeId = collection.palette.empty() ? 0 : collection.palette.front().propID.value();
+    pendingPaint_.sourceKind = collection.type == FloraRepository::CollectionType::Family
+        ? RecentPaintEntry::SourceKind::FloraFamily
+        : RecentPaintEntry::SourceKind::FloraChain;
+    pendingPaint_.sourceId = collection.id;
     pendingPaint_.name = collection.name;
     pendingPaint_.detail = collection.type == FloraRepository::CollectionType::Family
         ? "Randomly picks from the flora family members."

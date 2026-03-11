@@ -33,6 +33,16 @@ namespace {
         std::snprintf(buffer, bufferSize, "%02d:%02d", hours, minutes);
     }
 
+    std::string PropDisplayName_(const Prop& prop) {
+        if (!prop.visibleName.empty()) {
+            return prop.visibleName;
+        }
+        if (!prop.exemplarName.empty()) {
+            return prop.exemplarName;
+        }
+        return "<unnamed prop>";
+    }
+
 }
 
 const char* PropPanelTab::GetTabName() const {
@@ -50,17 +60,9 @@ void PropPanelTab::OnRender() {
     RenderFilterUI_();
 
     ImGui::Separator();
+    EnsureFilteredPropsCache_();
 
-    std::vector<PropView> propViews;
-    propViews.reserve(props.size());
-    for (const auto& prop : props) {
-        propViews.push_back(PropView{&prop});
-    }
-
-    const auto filteredProps = filterHelper_.ApplyFiltersAndSort(
-        propViews, favorites_->GetFavoritePropIds(), sortSpecs_);
-
-    ImGui::Text("Showing %zu of %zu props", filteredProps.size(), propViews.size());
+    ImGui::Text("Showing %zu of %zu props", filteredPropsCache_.size(), allPropViewsCache_.size());
     if (director_->IsPropPainting()) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Stop painting")) {
@@ -86,7 +88,7 @@ void PropPanelTab::OnRender() {
 
     // Table in scrollable child region so filters stay visible
     if (ImGui::BeginChild("PropTableRegion", ImVec2(0, 0), false)) {
-        RenderTableInternal_(filteredProps, favorites_->GetFavoritePropIds());
+        RenderTableInternal_(filteredPropsCache_, favorites_->GetFavoritePropIds());
     }
     ImGui::EndChild();
 
@@ -126,39 +128,42 @@ void PropPanelTab::RenderFilterUI_() {
     }
 
     ImGui::SetNextItemWidth(-1);
+    bool filtersChanged = false;
+
     if (ImGui::InputTextWithHint("##SearchProps", "Search props...", searchBuf, sizeof(searchBuf))) {
         filterHelper_.searchBuffer = searchBuf;
+        filtersChanged = true;
     }
 
-    ImGui::Checkbox("Favorites only", &filterHelper_.favoritesOnly);
+    filtersChanged = ImGui::Checkbox("Favorites only", &filterHelper_.favoritesOnly) || filtersChanged;
     ImGui::SameLine();
-    ImGui::Checkbox("In a family", &filterHelper_.requireFamily);
+    filtersChanged = ImGui::Checkbox("In a family", &filterHelper_.requireFamily) || filtersChanged;
     ImGui::SameLine();
-    ImGui::Checkbox("Day/Night", &filterHelper_.requireDayNight);
+    filtersChanged = ImGui::Checkbox("Day/Night", &filterHelper_.requireDayNight) || filtersChanged;
     ImGui::SameLine();
-    ImGui::Checkbox("Timed", &filterHelper_.requireTimed);
+    filtersChanged = ImGui::Checkbox("Timed", &filterHelper_.requireTimed) || filtersChanged;
     ImGui::SameLine();
-    ImGui::Checkbox("Seasonal", &filterHelper_.requireSeasonal);
+    filtersChanged = ImGui::Checkbox("Seasonal", &filterHelper_.requireSeasonal) || filtersChanged;
     ImGui::SameLine();
-    ImGui::Checkbox("<100% Chance", &filterHelper_.requireReducedChance);
+    filtersChanged = ImGui::Checkbox("<100% Chance", &filterHelper_.requireReducedChance) || filtersChanged;
 
     ImGui::Text("Width:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::wideInputWidth());
-    ImGui::SliderFloat2("##PropWidth", filterHelper_.propWidth, PropSize::kMinSize, PropSize::kMaxSize,
-                        UI::kMeterFloatFormat);
+    filtersChanged = ImGui::SliderFloat2("##PropWidth", filterHelper_.propWidth, PropSize::kMinSize, PropSize::kMaxSize,
+                                         UI::kMeterFloatFormat) || filtersChanged;
     ImGui::SameLine();
     ImGui::Text("Height:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::wideInputWidth());
-    ImGui::SliderFloat2("##PropHeight", filterHelper_.propHeight, PropSize::kMinSize, PropSize::kMaxSize,
-                        UI::kMeterFloatFormat);
+    filtersChanged = ImGui::SliderFloat2("##PropHeight", filterHelper_.propHeight, PropSize::kMinSize, PropSize::kMaxSize,
+                                         UI::kMeterFloatFormat) || filtersChanged;
     ImGui::SameLine();
     ImGui::Text("Depth:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(UI::wideInputWidth());
-    ImGui::SliderFloat2("##PropDepth", filterHelper_.propDepth, PropSize::kMinSize, PropSize::kMaxSize,
-                        UI::kMeterFloatFormat);
+    filtersChanged = ImGui::SliderFloat2("##PropDepth", filterHelper_.propDepth, PropSize::kMinSize, PropSize::kMaxSize,
+                                         UI::kMeterFloatFormat) || filtersChanged;
 
     ImGui::SameLine();
     ImGui::Spacing();
@@ -166,21 +171,43 @@ void PropPanelTab::RenderFilterUI_() {
 
     if (ImGui::Button("Clear filters")) {
         filterHelper_.ResetFilters();
+        filtersChanged = true;
+    }
+
+    if (filtersChanged) {
+        filteredPropsDirty_ = true;
     }
 }
 
 void PropPanelTab::RenderTable_() {
+    EnsureFilteredPropsCache_();
+    RenderTableInternal_(filteredPropsCache_, favorites_->GetFavoritePropIds());
+}
+
+void PropPanelTab::RebuildPropViewsCache_() {
     const auto& props = props_->GetProps();
-    std::vector<PropView> propViews;
-    propViews.reserve(props.size());
+    allPropViewsCache_.clear();
+    allPropViewsCache_.reserve(props.size());
     for (const auto& prop : props) {
-        propViews.push_back(PropView{&prop});
+        allPropViewsCache_.push_back(PropView{&prop});
+    }
+    cachedPropCount_ = props.size();
+    filteredPropsDirty_ = true;
+}
+
+void PropPanelTab::EnsureFilteredPropsCache_() {
+    const auto& props = props_->GetProps();
+    if (cachedPropCount_ != props.size() || allPropViewsCache_.size() != props.size()) {
+        RebuildPropViewsCache_();
     }
 
-    const auto filteredProps = filterHelper_.ApplyFiltersAndSort(
-        propViews, favorites_->GetFavoritePropIds(), sortSpecs_);
+    if (!filteredPropsDirty_) {
+        return;
+    }
 
-    RenderTableInternal_(filteredProps, favorites_->GetFavoritePropIds());
+    filteredPropsCache_ = filterHelper_.ApplyFiltersAndSort(
+        allPropViewsCache_, favorites_->GetFavoritePropIds(), sortSpecs_);
+    filteredPropsDirty_ = false;
 }
 
 void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredProps,
@@ -233,10 +260,11 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                     break;
                 }
             }
-            if (!newSpecs.empty()) {
+            if (!newSpecs.empty() && newSpecs != sortSpecs_) {
                 sortSpecs_ = std::move(newSpecs);
-                specs->SpecsDirty = false;
+                filteredPropsDirty_ = true;
             }
+            specs->SpecsDirty = false;
         }
 
         const float rowHeight = UI::iconRowHeight();
@@ -314,7 +342,9 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                     bool switchedTarget = false;
                     if (director_->IsPropPainting()) {
                         ReleaseImGuiInputCapture_();
-                        switchedTarget = director_->SwitchPropPaintingTarget(prop.instanceId.value(), prop.visibleName);
+                        switchedTarget = director_->SwitchPropPaintingTarget(
+                            prop.instanceId.value(),
+                            PropDisplayName_(prop));
                     }
 
                     if (switchedTarget) {
@@ -322,7 +352,7 @@ void PropPanelTab::RenderTableInternal_(const std::vector<PropView>& filteredPro
                         }
                     else {
                         pendingPaint_.propId = prop.instanceId.value();
-                        pendingPaint_.propName = prop.visibleName;
+                        pendingPaint_.propName = PropDisplayName_(prop);
                         pendingPaint_.settings.mode = PaintMode::Direct;
                         pendingPaint_.settings.rotation = 0;
                         pendingPaint_.open = true;
@@ -372,6 +402,9 @@ void PropPanelTab::RenderFavButton_(const Prop& prop) const {
     const bool isFavorite = favorites_->IsPropFavorite(prop.groupId.value(), prop.instanceId.value());
     if (ImGui::Button(isFavorite ? "Unstar" : "Star")) {
         favorites_->TogglePropFavorite(prop.groupId.value(), prop.instanceId.value());
+        if (filterHelper_.favoritesOnly) {
+            const_cast<PropPanelTab*>(this)->filteredPropsDirty_ = true;
+        }
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip(isFavorite ? "Remove from favorites" : "Add to favorites");
