@@ -330,6 +330,13 @@ bool SC4PlopAndPaintDirector::PostAppShutdown() {
         propStripperControl_.Reset();
     }
 
+    if (floraStripperControl_) {
+        StopFloraStripping();
+        floraStripperControl_->SetCity(nullptr);
+        floraStripperControl_->Shutdown();
+        floraStripperControl_.Reset();
+    }
+
     if (propPainterControl_) {
         StopPropPainting();
         propPainterControl_->SetCity(nullptr);
@@ -583,7 +590,7 @@ bool SC4PlopAndPaintDirector::StartFloraPainting(const uint32_t floraTypeId,
         return false;
     }
 
-    if (!PrepareForExclusiveActivation_(false, true, false)) {
+    if (!PrepareForExclusiveActivation_(false, true, false, false)) {
         LOG_INFO("Blocked flora paint switch while another tool still has a sketch in progress");
         return false;
     }
@@ -671,13 +678,74 @@ bool SC4PlopAndPaintDirector::IsFloraPainting() const {
     return floraPainting_;
 }
 
+bool SC4PlopAndPaintDirector::StartFloraStripping() {
+    if (!pCity_ || !pView3D_) {
+        LOG_WARN("Cannot start flora stripping: city or view not available");
+        return false;
+    }
+
+    if (!PrepareForExclusiveActivation_(false, false, false, true)) {
+        LOG_INFO("Blocked flora stripping while another tool still has a sketch in progress");
+        return false;
+    }
+
+    if (!floraStripperControl_) {
+        auto* control = new FloraStripperInputControl();
+        floraStripperControl_ = control;
+        if (!floraStripperControl_->Init()) {
+            LOG_ERROR("Failed to initialize FloraStripperInputControl");
+            floraStripperControl_.Reset();
+            return false;
+        }
+    }
+
+    floraStripperControl_->SetCity(pCity_);
+    floraStripperControl_->SetWindow(pView3D_->AsIGZWin());
+    floraStripperControl_->SetOnCancel([this]() {
+        if (pView3D_ && floraStripperControl_ &&
+            pView3D_->GetCurrentViewInputControl() == floraStripperControl_) {
+            pView3D_->RemoveCurrentViewInputControl(false);
+        }
+        floraStripping_ = false;
+        UpdatePaintPanels_();
+        LOG_INFO("Stopped flora stripping");
+    });
+
+    if (!pView3D_->SetCurrentViewInputControl(
+        floraStripperControl_,
+        cISC4View3DWin::ViewInputControlStackOperation_RemoveCurrentControl)) {
+        LOG_WARN("Failed to set flora stripper as current view input control");
+        UpdatePaintPanels_();
+        return false;
+    }
+
+    floraStripping_ = true;
+    LOG_INFO("Started flora stripping");
+    return true;
+}
+
+void SC4PlopAndPaintDirector::StopFloraStripping() {
+    if (pView3D_ && floraStripperControl_) {
+        if (pView3D_->GetCurrentViewInputControl() == floraStripperControl_) {
+            pView3D_->RemoveCurrentViewInputControl(false);
+        }
+    }
+    floraStripping_ = false;
+    UpdatePaintPanels_();
+    LOG_INFO("Stopped flora stripping");
+}
+
+bool SC4PlopAndPaintDirector::IsFloraStripping() const {
+    return floraStripping_;
+}
+
 bool SC4PlopAndPaintDirector::StartPropStripping() {
     if (!pCity_ || !pView3D_) {
         LOG_WARN("Cannot start prop stripping: city or view not available");
         return false;
     }
 
-    if (!PrepareForExclusiveActivation_(false, false, true)) {
+    if (!PrepareForExclusiveActivation_(false, false, true, false)) {
         LOG_INFO("Blocked prop stripping while another tool still has a sketch in progress");
         return false;
     }
@@ -820,6 +888,9 @@ void SC4PlopAndPaintDirector::ProcessPendingToolActions_() {
     if (propStripperControl_) {
         propStripperControl_->ProcessPendingActions();
     }
+    if (floraStripperControl_) {
+        floraStripperControl_->ProcessPendingActions();
+    }
     if (propPainterControl_) {
         propPainterControl_->ProcessPendingActions();
     }
@@ -844,8 +915,9 @@ void SC4PlopAndPaintDirector::DrawOverlayCallback_(const DrawServicePass pass, c
     PropPainterInputControl* painterControl = director->propPainterControl_;
     PropStripperInputControl* stripperControl = director->propStripperControl_;
     FloraPainterInputControl* floraControl = director->floraPlacerControl_;
+    FloraStripperInputControl* floraStripperControl = director->floraStripperControl_;
 
-    const bool needsOverlay = painterControl || stripperControl || floraControl;
+    const bool needsOverlay = painterControl || stripperControl || floraControl || floraStripperControl;
 
     if (!director->drawOverlayEnabled_ || !director->imguiService_ || !needsOverlay) {
         return;
@@ -865,6 +937,9 @@ void SC4PlopAndPaintDirector::DrawOverlayCallback_(const DrawServicePass pass, c
     }
     if (floraControl) {
         floraControl->DrawOverlay(device);
+    }
+    if (floraStripperControl) {
+        floraStripperControl->DrawOverlay(device);
     }
     device->Release();
     dd->Release();
@@ -946,7 +1021,8 @@ bool SC4PlopAndPaintDirector::PrepareForPaintSwitch_(BasePainterInputControl* co
 
 bool SC4PlopAndPaintDirector::PrepareForExclusiveActivation_(const bool keepPropPainting,
                                                              const bool keepFloraPainting,
-                                                             const bool keepPropStripping) {
+                                                             const bool keepPropStripping,
+                                                             const bool keepFloraStripping) {
     if (!keepPropPainting && !CanPrepareForPaintSwitch_(propPainterControl_, propPainting_)) {
         return false;
     }
@@ -965,6 +1041,10 @@ bool SC4PlopAndPaintDirector::PrepareForExclusiveActivation_(const bool keepProp
 
     if (!keepPropStripping && propStripping_) {
         StopPropStripping();
+    }
+
+    if (!keepFloraStripping && floraStripping_) {
+        StopFloraStripping();
     }
 
     return true;

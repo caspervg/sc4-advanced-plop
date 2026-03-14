@@ -105,6 +105,7 @@ void FloraCollectionsPanelTab::OnRender() {
             director_->StopFloraPainting();
         }
     }
+    RenderFloraStripperControls_();
 
     ImGui::Separator();
     if (ImGui::BeginChild("FloraCollectionsTableRegion", ImVec2(0, UI::familyTableHeight()), false)) {

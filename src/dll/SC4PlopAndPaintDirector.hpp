@@ -20,6 +20,7 @@
 #include "cRZAutoRefCount.h"
 #include "cRZMessage2COMDirector.h"
 #include "flora/FloraPainterInputControl.hpp"
+#include "flora/FloraStripperInputControl.hpp"
 #include "imgui.h"
 #include "paint/PaintStatusPanel.hpp"
 #include "props/PropPainterInputControl.hpp"
@@ -72,6 +73,9 @@ public:
                             const std::optional<RecentPaintSource>& source = std::nullopt);
     void StopFloraPainting();
     [[nodiscard]] bool IsFloraPainting() const;
+    bool StartFloraStripping();
+    void StopFloraStripping();
+    [[nodiscard]] bool IsFloraStripping() const;
     bool StartPropStripping();
     void StopPropStripping();
     [[nodiscard]] bool IsPropStripping() const;
@@ -101,7 +105,8 @@ private:
     void PersistRecentPaints_();
     bool CanPrepareForPaintSwitch_(BasePainterInputControl* control, bool isPaintingFlag) const;
     bool PrepareForPaintSwitch_(BasePainterInputControl* control, bool& isPaintingFlag);
-    bool PrepareForExclusiveActivation_(bool keepPropPainting, bool keepFloraPainting, bool keepPropStripping);
+    bool PrepareForExclusiveActivation_(bool keepPropPainting, bool keepFloraPainting, bool keepPropStripping,
+                                        bool keepFloraStripping = false);
     void ApplySwitchPolicy_(BasePainterInputControl* control);
     [[nodiscard]] RecentPaintEntry BuildRecentPaintEntry_(RecentPaintEntry::Kind kind,
                                                           uint32_t typeId,
@@ -130,6 +135,8 @@ private:
     bool propPainting_{false};
     cRZAutoRefCount<FloraPainterInputControl>  floraPlacerControl_;
     bool floraPainting_{false};
+    cRZAutoRefCount<FloraStripperInputControl> floraStripperControl_;
+    bool floraStripping_{false};
     cRZAutoRefCount<PropStripperInputControl> propStripperControl_;
     bool propStripping_{false};
     std::unique_ptr<PaintStatusPanel> statusPanel_;

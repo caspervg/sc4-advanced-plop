@@ -72,6 +72,7 @@ void FloraPanelTab::OnRender() {
             director_->StopFloraPainting();
         }
     }
+    RenderFloraStripperControls_();
 
     if (ImGui::BeginChild("FloraTableRegion", ImVec2(0, 0), false)) {
         RenderIndividualFloraTable_(filteredFloraIndices);
