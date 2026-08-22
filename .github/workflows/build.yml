@@ -48,6 +48,9 @@ jobs:
           ./vendor/vcpkg/bootstrap-vcpkg.bat
           echo "VCPKG_ROOT=${{ github.workspace }}/vendor/vcpkg" >> $env:GITHUB_ENV
 
+      - name: Install vcpkg dependencies
+        run: ./vendor/vcpkg/vcpkg.exe install --triplet x86-windows-static-md
+
       - name: Build sc4-render-services
         working-directory: vendor/sc4-render-services
         run: |
@@ -109,6 +112,9 @@ jobs:
         run: |
           ./vendor/vcpkg/bootstrap-vcpkg.bat
           echo "VCPKG_ROOT=${{ github.workspace }}/vendor/vcpkg" >> $env:GITHUB_ENV
+
+      - name: Install vcpkg dependencies
+        run: ./vendor/vcpkg/vcpkg.exe install --triplet x64-windows-static-md
 
       - name: Build CLI
         run: |

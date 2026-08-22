@@ -1,6 +1,7 @@
 #include "PaintStatusPanel.hpp"
 
 #include "../decals/DecalPainterInputControl.hpp"
+#include "../decals/FractionalAngles.hpp"
 #include "../props/PropPainterInputControl.hpp"
 #include "imgui.h"
 
@@ -58,6 +59,7 @@ void PaintStatusPanel::OnRender() {
         if (decalControl->IsMirrored()) {
             ImGui::TextUnformatted("Mirrored");
         }
+        ImGui::Text("Rotation: %s", fa_angles::Label(decalControl->GetRotationDegrees()).c_str());
     }
 
     // Mode-specific settings
@@ -90,7 +92,7 @@ void PaintStatusPanel::OnRender() {
     // Hotkey hints
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-    ImGui::TextUnformatted("R rotation  G grid  S snap");
+        ImGui::TextUnformatted("R rotation  G grid  Shift+S snap");
     ImGui::TextUnformatted("Ctrl+[ ] grid  P preview");
     if (activeControl_->SupportsVerticalAdjustment()) {
         ImGui::TextUnformatted("[ ] +/-1.0m  Shift+[ ] +/-5.0m  Shift+Alt+[ ] +/-0.1m");

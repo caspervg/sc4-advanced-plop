@@ -18,6 +18,7 @@
 #include "../utils/Logger.h"
 #include "DecalTextureLoader.hpp"
 #include "FSHReader.h"
+#include "FractionalAngles.hpp"
 
 namespace {
     constexpr float kIconSize = 64.0f;
@@ -631,6 +632,31 @@ void DecalPanelTab::RenderDecalGrid_(const std::vector<size_t>& indices) {
     ImGui::EndChild();
 }
 
+std::string DecalPanelTab::CurrentFaAngleLabel_(const float rotationDegrees) const {
+    return fa_angles::Label(rotationDegrees);
+}
+
+void DecalPanelTab::RenderFaAngleCombo_(float& rotationDegrees, TerrainDecalState& state) {
+    const float quadrantBase = std::floor(rotationDegrees / 90.0f) * 90.0f;
+    const std::string previewLabel = CurrentFaAngleLabel_(rotationDegrees);
+
+    if (!ImGui::BeginCombo("FA angle##decalFaAngle", previewLabel.c_str())) {
+        return;
+    }
+
+    for (const fa_angles::Preset& preset : fa_angles::kQuadrantPresets) {
+        const bool isSelected = (previewLabel == preset.label);
+        if (ImGui::Selectable(preset.label.data(), isSelected)) {
+            rotationDegrees = quadrantBase + preset.degrees;
+            state.decalInfo.rotationTurns = DegreesToTurns(rotationDegrees);
+        }
+        if (isSelected) {
+            ImGui::SetItemDefaultFocus();
+        }
+    }
+    ImGui::EndCombo();
+}
+
 void DecalPanelTab::RenderSettingsModal_() {
     if (pendingPaint_.open) {
         ImGui::OpenPopup("Decal Paint Settings");
@@ -656,6 +682,7 @@ void DecalPanelTab::RenderSettingsModal_() {
     if (ImGui::DragFloat("Rotation (deg)##decalRot", &rotationDegrees, 1.0f, -3600.0f, 3600.0f, "%.1f")) {
         state.decalInfo.rotationTurns = DegreesToTurns(rotationDegrees);
     }
+    RenderFaAngleCombo_(rotationDegrees, state);
     bool mirrored = (state.flags & kTerrainDecalFlagMirror) != 0;
     if (ImGui::Checkbox("Mirror##decalMirror", &mirrored)) {
         state.flags ^= kTerrainDecalFlagMirror;
