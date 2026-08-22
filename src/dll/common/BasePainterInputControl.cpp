@@ -549,7 +549,8 @@ bool BasePainterInputControl::HandleActiveKeyDown_(const int32_t vkCode, const u
         return true;
     }
 
-    if (vkCode == 'S') {
+    if (vkCode == 'S' &&
+        ((modifiers & MOD_SHIFT) != 0 || (GetKeyState(VK_SHIFT) & 0x8000) != 0)) {
         settings_.snapPointsToGrid = !settings_.snapPointsToGrid;
         if (!settings_.snapPointsToGrid) {
             settings_.snapPlacementsToGrid = false;

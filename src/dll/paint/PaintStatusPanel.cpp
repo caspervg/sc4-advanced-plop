@@ -92,7 +92,7 @@ void PaintStatusPanel::OnRender() {
     // Hotkey hints
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-    ImGui::TextUnformatted("R rotation  G grid  S snap");
+        ImGui::TextUnformatted("R rotation  G grid  Shift+S snap");
     ImGui::TextUnformatted("Ctrl+[ ] grid  P preview");
     if (activeControl_->SupportsVerticalAdjustment()) {
         ImGui::TextUnformatted("[ ] +/-1.0m  Shift+[ ] +/-5.0m  Shift+Alt+[ ] +/-0.1m");
