@@ -33,7 +33,9 @@ void DecalRepository::Populate(cIGZPersistResourceManager* pRM) {
 
     for (uint32_t i = 0; i < count; ++i) {
         const cGZPersistResourceKey& key = rawList->GetKey(i);
-        if (key.group == kDecalTextureGroup && (key.instance & kZoom4Mask) == kZoom4Value) {
+        const uint32_t zoomVariant = key.instance & kZoom4Mask;
+        if (key.group == kDecalTextureGroup &&
+            (zoomVariant == kZoom4Value || zoomVariant == 9 || zoomVariant == 0xE)) {
             instanceIds_.push_back(key.instance);
         }
     }
