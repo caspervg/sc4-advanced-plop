@@ -1,5 +1,8 @@
 #pragma once
+#include <system_error>
 #include <unordered_set>
+
+#include <spdlog/spdlog.h>
 
 #include "index.hpp"
 
@@ -10,12 +13,32 @@ const auto kDbpfFileExtensions = std::unordered_set<std::string>{
 
 template<typename Iter>
 auto FindPlugins(Iter begin, Iter end, std::vector<std::filesystem::path>& out) -> void {
-    for (auto it = begin; it != end; ++it) {
-        if (! it->is_regular_file()) continue;
-        auto ext = it->path().extension().string();
-        std::ranges::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (kDbpfFileExtensions.contains(ext)) {
-            out.push_back(it->path());
+    for (auto it = begin; it != end;) {
+        try {
+            if (it->is_regular_file()) {
+                auto ext = it->path().extension().string();
+                std::ranges::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (kDbpfFileExtensions.contains(ext)) {
+                    out.push_back(it->path());
+                }
+            }
+            ++it;
+        } catch (const std::system_error& error) {
+            // Unreadable/special-char directory: skip its subtree, keep scanning siblings.
+            spdlog::warn("Plugin scan skipping '{}': {}",
+                         it->path().string(), error.code().message());
+            try {
+                if constexpr (requires { it.disable_recursion_pending(); }) {
+                    it.disable_recursion_pending();
+                }
+                ++it;
+            } catch (const std::system_error&) {
+                // ponytail: two consecutive failures means we can't make progress —
+                // abandon the rest of this tree rather than spin forever
+                spdlog::warn("Plugin scan aborted, files below '{}' are skipped",
+                             it->path().string());
+                break;
+            }
         }
     }
 }

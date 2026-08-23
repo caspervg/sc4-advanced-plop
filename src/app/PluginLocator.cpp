@@ -6,6 +6,8 @@
 #include <iterator>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
 namespace fs = std::filesystem;
 
 namespace {
