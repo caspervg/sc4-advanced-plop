@@ -355,6 +355,11 @@ void DecalStripperInputControl::DrawOverlay(IDirect3DDevice7* device) {
     overlay_.Draw(device, false);
 }
 
+void DecalStripperInputControl::DrawOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+                                            cIGZS3DCameraService* cameraService) {
+    overlay_.Draw(device, context, cameraService, false);
+}
+
 void DecalStripperInputControl::BuildOverlay_() {
     if (!cursorValid_) {
         overlay_.Clear();

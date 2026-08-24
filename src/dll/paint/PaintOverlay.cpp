@@ -3,10 +3,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <numeric>
+
+#include <d3d11.h>
+#include <d3dcompiler.h>
 
 #include "PaintSettings.hpp"
 #include "cISTETerrain.h"
+#include "public/cIGZS3DCameraService.h"
 
 namespace {
     constexpr DWORD kFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE;
@@ -18,6 +23,33 @@ namespace {
         float x;
         float z;
     };
+
+    struct D3D11OverlayVertex {
+        float x;
+        float y;
+        float z;
+        DWORD color;
+    };
+
+    constexpr char kOverlayShader[] = R"(
+struct VSInput { float3 position : POSITION; float4 color : COLOR0; };
+struct PSInput { float4 position : SV_POSITION; float4 color : COLOR0; };
+PSInput VSMain(VSInput input) {
+    PSInput output;
+    output.position = float4(input.position, 1.0);
+    output.color = input.color;
+    return output;
+}
+float4 PSMain(PSInput input) : SV_TARGET { return input.color; }
+)";
+
+    constexpr DWORD ToD3D11Color(const DWORD color) {
+        return (color & 0xFF00FF00u)
+            | ((color & 0x00FF0000u) >> 16u)
+            | ((color & 0x000000FFu) << 16u);
+    }
+
+    static_assert(ToD3D11Color(0xAA112233u) == 0xAA332211u);
 
     float Cross2D(const XZPoint& a, const XZPoint& b, const XZPoint& c) {
         return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
@@ -86,6 +118,10 @@ namespace {
         const float hx1 = h01 + (h11 - h01) * tx;
         return hx0 + (hx1 - hx0) * tz;
     }
+}
+
+PaintOverlay::~PaintOverlay() {
+    ReleaseD3D11Resources_();
 }
 
 void PaintOverlay::Clear() {
@@ -346,6 +382,232 @@ void PaintOverlay::Draw(IDirect3DDevice7* device, const bool drawGrid) {
     }
 
     RestoreRenderState_(device);
+}
+
+void PaintOverlay::Draw(ID3D11Device* device, ID3D11DeviceContext* context,
+                        cIGZS3DCameraService* cameraService, const bool drawGrid) {
+    if (!device || !context || !cameraService || Empty()) {
+        return;
+    }
+
+    D3D11_VIEWPORT viewport{};
+    UINT viewportCount = 1;
+    context->RSGetViewports(&viewportCount, &viewport);
+    if (viewportCount == 0 || viewport.Width <= 0.0f || viewport.Height <= 0.0f) {
+        return;
+    }
+
+    const S3DCameraHandle camera = cameraService->WrapActiveRendererCamera();
+    if (!camera.ptr) {
+        return;
+    }
+
+    std::vector<D3D11OverlayVertex> vertices;
+    for (size_t i = 0; i < layers_.size(); ++i) {
+        if ((!drawGrid && i == kLayerGrid) || !layers_[i].visible) {
+            continue;
+        }
+
+        const auto& source = layers_[i].vertices;
+        for (size_t offset = 0; offset + 2 < source.size(); offset += 3) {
+            D3D11OverlayVertex triangle[3]{};
+            bool visible = true;
+            for (size_t vertex = 0; vertex < 3; ++vertex) {
+                float screenX{};
+                float screenY{};
+                float depth{};
+                const auto& point = source[offset + vertex];
+                if (!cameraService->WorldToScreen(
+                        camera, point.x, point.y, point.z, screenX, screenY, &depth)) {
+                    visible = false;
+                    break;
+                }
+
+                triangle[vertex].x = ((screenX - viewport.TopLeftX) / viewport.Width) * 2.0f - 1.0f;
+                triangle[vertex].y = 1.0f - ((screenY - viewport.TopLeftY) / viewport.Height) * 2.0f;
+                triangle[vertex].z = depth * 0.5f + 0.5f;
+                triangle[vertex].color = ToD3D11Color(point.color);
+            }
+
+            if (visible) {
+                vertices.insert(vertices.end(), std::begin(triangle), std::end(triangle));
+            }
+        }
+    }
+    cameraService->DestroyCamera(camera);
+
+    if (vertices.empty() || !EnsureD3D11Resources_(device, vertices.size())) {
+        return;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(context->Map(d3d11VertexBuffer_, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+        return;
+    }
+    std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(D3D11OverlayVertex));
+    context->Unmap(d3d11VertexBuffer_, 0);
+
+    ID3D11InputLayout* oldInputLayout{};
+    ID3D11Buffer* oldVertexBuffer{};
+    UINT oldStride{};
+    UINT oldOffset{};
+    D3D11_PRIMITIVE_TOPOLOGY oldTopology{};
+    ID3D11VertexShader* oldVertexShader{};
+    ID3D11PixelShader* oldPixelShader{};
+    ID3D11GeometryShader* oldGeometryShader{};
+    ID3D11BlendState* oldBlendState{};
+    FLOAT oldBlendFactor[4]{};
+    UINT oldSampleMask{};
+    ID3D11DepthStencilState* oldDepthState{};
+    UINT oldStencilRef{};
+    ID3D11RasterizerState* oldRasterizerState{};
+
+    context->IAGetInputLayout(&oldInputLayout);
+    context->IAGetVertexBuffers(0, 1, &oldVertexBuffer, &oldStride, &oldOffset);
+    context->IAGetPrimitiveTopology(&oldTopology);
+    context->VSGetShader(&oldVertexShader, nullptr, nullptr);
+    context->PSGetShader(&oldPixelShader, nullptr, nullptr);
+    context->GSGetShader(&oldGeometryShader, nullptr, nullptr);
+    context->OMGetBlendState(&oldBlendState, oldBlendFactor, &oldSampleMask);
+    context->OMGetDepthStencilState(&oldDepthState, &oldStencilRef);
+    context->RSGetState(&oldRasterizerState);
+
+    const UINT stride = sizeof(D3D11OverlayVertex);
+    const UINT offset = 0;
+    const FLOAT blendFactor[4]{};
+    context->IASetInputLayout(d3d11InputLayout_);
+    context->IASetVertexBuffers(0, 1, &d3d11VertexBuffer_, &stride, &offset);
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context->VSSetShader(d3d11VertexShader_, nullptr, 0);
+    context->PSSetShader(d3d11PixelShader_, nullptr, 0);
+    context->GSSetShader(nullptr, nullptr, 0);
+    context->OMSetBlendState(d3d11BlendState_, blendFactor, 0xFFFFFFFFu);
+    context->OMSetDepthStencilState(d3d11DepthState_, 0);
+    context->RSSetState(d3d11RasterizerState_);
+    context->Draw(static_cast<UINT>(vertices.size()), 0);
+
+    context->IASetInputLayout(oldInputLayout);
+    context->IASetVertexBuffers(0, 1, &oldVertexBuffer, &oldStride, &oldOffset);
+    context->IASetPrimitiveTopology(oldTopology);
+    context->VSSetShader(oldVertexShader, nullptr, 0);
+    context->PSSetShader(oldPixelShader, nullptr, 0);
+    context->GSSetShader(oldGeometryShader, nullptr, 0);
+    context->OMSetBlendState(oldBlendState, oldBlendFactor, oldSampleMask);
+    context->OMSetDepthStencilState(oldDepthState, oldStencilRef);
+    context->RSSetState(oldRasterizerState);
+
+    if (oldInputLayout) oldInputLayout->Release();
+    if (oldVertexBuffer) oldVertexBuffer->Release();
+    if (oldVertexShader) oldVertexShader->Release();
+    if (oldPixelShader) oldPixelShader->Release();
+    if (oldGeometryShader) oldGeometryShader->Release();
+    if (oldBlendState) oldBlendState->Release();
+    if (oldDepthState) oldDepthState->Release();
+    if (oldRasterizerState) oldRasterizerState->Release();
+}
+
+bool PaintOverlay::EnsureD3D11Resources_(ID3D11Device* device, const size_t vertexCount) {
+    if (device != d3d11Device_) {
+        ReleaseD3D11Resources_();
+        d3d11Device_ = device;
+        d3d11Device_->AddRef();
+    }
+
+    if (!d3d11VertexShader_) {
+        ID3DBlob* vertexBlob{};
+        ID3DBlob* pixelBlob{};
+        if (FAILED(D3DCompile(kOverlayShader, sizeof(kOverlayShader), nullptr, nullptr, nullptr,
+                              "VSMain", "vs_4_0", 0, 0, &vertexBlob, nullptr)) ||
+            FAILED(D3DCompile(kOverlayShader, sizeof(kOverlayShader), nullptr, nullptr, nullptr,
+                              "PSMain", "ps_4_0", 0, 0, &pixelBlob, nullptr))) {
+            if (vertexBlob) vertexBlob->Release();
+            if (pixelBlob) pixelBlob->Release();
+            return false;
+        }
+
+        const D3D11_INPUT_ELEMENT_DESC inputElements[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        };
+        const bool failed =
+            FAILED(device->CreateVertexShader(vertexBlob->GetBufferPointer(), vertexBlob->GetBufferSize(),
+                                              nullptr, &d3d11VertexShader_)) ||
+            FAILED(device->CreatePixelShader(pixelBlob->GetBufferPointer(), pixelBlob->GetBufferSize(),
+                                             nullptr, &d3d11PixelShader_)) ||
+            FAILED(device->CreateInputLayout(inputElements, 2, vertexBlob->GetBufferPointer(),
+                                             vertexBlob->GetBufferSize(), &d3d11InputLayout_));
+        vertexBlob->Release();
+        pixelBlob->Release();
+        if (failed) {
+            ReleaseD3D11Resources_();
+            return false;
+        }
+
+        D3D11_BLEND_DESC blendDesc{};
+        blendDesc.RenderTarget[0].BlendEnable = TRUE;
+        blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+        blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+        blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+        blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+        D3D11_DEPTH_STENCIL_DESC depthDesc{};
+        depthDesc.DepthEnable = TRUE;
+        depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+        depthDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+
+        D3D11_RASTERIZER_DESC rasterizerDesc{};
+        rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+        rasterizerDesc.CullMode = D3D11_CULL_NONE;
+        rasterizerDesc.DepthClipEnable = TRUE;
+        rasterizerDesc.DepthBias = -8;
+
+        if (FAILED(device->CreateBlendState(&blendDesc, &d3d11BlendState_)) ||
+            FAILED(device->CreateDepthStencilState(&depthDesc, &d3d11DepthState_)) ||
+            FAILED(device->CreateRasterizerState(&rasterizerDesc, &d3d11RasterizerState_))) {
+            ReleaseD3D11Resources_();
+            return false;
+        }
+    }
+
+    if (vertexCount > d3d11VertexCapacity_) {
+        if (d3d11VertexBuffer_) {
+            d3d11VertexBuffer_->Release();
+            d3d11VertexBuffer_ = nullptr;
+        }
+        D3D11_BUFFER_DESC bufferDesc{};
+        bufferDesc.ByteWidth = static_cast<UINT>(vertexCount * sizeof(D3D11OverlayVertex));
+        bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
+        bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        if (FAILED(device->CreateBuffer(&bufferDesc, nullptr, &d3d11VertexBuffer_))) {
+            return false;
+        }
+        d3d11VertexCapacity_ = vertexCount;
+    }
+    return true;
+}
+
+void PaintOverlay::ReleaseD3D11Resources_() {
+    if (d3d11VertexBuffer_) d3d11VertexBuffer_->Release();
+    if (d3d11VertexShader_) d3d11VertexShader_->Release();
+    if (d3d11PixelShader_) d3d11PixelShader_->Release();
+    if (d3d11InputLayout_) d3d11InputLayout_->Release();
+    if (d3d11BlendState_) d3d11BlendState_->Release();
+    if (d3d11DepthState_) d3d11DepthState_->Release();
+    if (d3d11RasterizerState_) d3d11RasterizerState_->Release();
+    if (d3d11Device_) d3d11Device_->Release();
+    d3d11VertexBuffer_ = nullptr;
+    d3d11VertexShader_ = nullptr;
+    d3d11PixelShader_ = nullptr;
+    d3d11InputLayout_ = nullptr;
+    d3d11BlendState_ = nullptr;
+    d3d11DepthState_ = nullptr;
+    d3d11RasterizerState_ = nullptr;
+    d3d11Device_ = nullptr;
+    d3d11VertexCapacity_ = 0;
 }
 
 void PaintOverlay::SetupRenderState_(IDirect3DDevice7* device) {

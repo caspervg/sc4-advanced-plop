@@ -278,6 +278,16 @@ void BasePainterInputControl::DrawOverlay(IDirect3DDevice7* device) {
     }
 }
 
+void BasePainterInputControl::DrawOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+                                          cIGZS3DCameraService* cameraService) {
+    if (settings_.previewMode != PreviewMode::Hidden &&
+        (state_ == ControlState::ActiveDirect ||
+         state_ == ControlState::ActiveLine ||
+         state_ == ControlState::ActivePolygon)) {
+        overlay_.Draw(device, context, cameraService);
+    }
+}
+
 // ── Undo / commit ────────────────────────────────────────────────────────────
 
 void BasePainterInputControl::UndoLastPlacement() {

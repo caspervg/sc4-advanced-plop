@@ -4,6 +4,8 @@
 
 #include <cIGZFrameWork.h>
 #include <cstdio>
+#include <d3d11.h>
+#include <dxgi.h>
 #include <wil/resource.h>
 #include <wil/win32_helpers.h>
 
@@ -136,7 +138,10 @@ SC4PlopAndPaintDirector::SC4PlopAndPaintDirector()
       , pView3D_(nullptr)
       , panelRegistered_(false) {}
 
-SC4PlopAndPaintDirector::~SC4PlopAndPaintDirector() = default;
+SC4PlopAndPaintDirector::~SC4PlopAndPaintDirector() {
+    if (d3d11Context_) d3d11Context_->Release();
+    if (d3d11Device_) d3d11Device_->Release();
+}
 
 uint32_t SC4PlopAndPaintDirector::GetDirectorID() const {
     return kSC4AdvancedLotPlopDirectorID;
@@ -207,6 +212,13 @@ bool SC4PlopAndPaintDirector::PostAppInit() {
     if (mpFrameWork && mpFrameWork->GetSystemService(kImGuiServiceID, GZIID_cIGZImGuiService,
                                                      reinterpret_cast<void**>(&imguiService_))) {
         LOG_INFO("Acquired ImGui service");
+        if (imguiService_->GetApiVersion() < kImGuiServiceApiVersion) {
+            LOG_ERROR("SC4 Render Services API {} is too old; API {} is required",
+                      imguiService_->GetApiVersion(), kImGuiServiceApiVersion);
+            imguiService_->Release();
+            imguiService_ = nullptr;
+            return true;
+        }
 
         if (mpFrameWork->GetSystemService(kS3DCameraServiceID, GZIID_cIGZS3DCameraService,
                                           reinterpret_cast<void**>(&cameraService_))) {
@@ -445,6 +457,15 @@ bool SC4PlopAndPaintDirector::PostAppShutdown() {
     if (drawService_ && drawCallbackToken_ != 0) {
         drawService_->UnregisterDrawPassCallback(drawCallbackToken_);
         drawCallbackToken_ = 0;
+    }
+
+    if (d3d11Context_) {
+        d3d11Context_->Release();
+        d3d11Context_ = nullptr;
+    }
+    if (d3d11Device_) {
+        d3d11Device_->Release();
+        d3d11Device_ = nullptr;
     }
 
     if (imguiService_) {
@@ -1359,33 +1380,60 @@ void SC4PlopAndPaintDirector::DrawOverlayCallback_(const DrawServicePass pass, c
 
     IDirect3DDevice7* device = nullptr;
     IDirectDraw7* dd = nullptr;
-    if (!director->imguiService_->AcquireD3DInterfaces(&device, &dd)) {
+    if (director->imguiService_->AcquireD3DInterfaces(&device, &dd)) {
+        if (painterControl) painterControl->DrawOverlay(device);
+        if (stripperControl) stripperControl->DrawOverlay(device);
+        if (floraControl) floraControl->DrawOverlay(device);
+        if (floraStripperControl) floraStripperControl->DrawOverlay(device);
+        if (decalPainterControl) decalPainterControl->DrawOverlay(device);
+        if (decalStripperControl) decalStripperControl->DrawOverlay(device);
+        if (scenePickerControl) scenePickerControl->DrawOverlay(device);
+        device->Release();
+        dd->Release();
         return;
     }
 
-    if (painterControl) {
-        painterControl->DrawOverlay(device);
+    const uint32_t generation = director->imguiService_->GetDeviceGeneration();
+    if (director->d3d11DeviceGeneration_ == generation && director->d3d11Device_
+        && director->d3d11Context_ && director->cameraService_) {
+        if (painterControl) painterControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
+        if (stripperControl) stripperControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
+        if (floraControl) floraControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
+        if (floraStripperControl) floraStripperControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
+        if (decalPainterControl) decalPainterControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
+        if (decalStripperControl) decalStripperControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
+        if (scenePickerControl) scenePickerControl->DrawOverlay(director->d3d11Device_, director->d3d11Context_, director->cameraService_);
     }
-    if (stripperControl) {
-        stripperControl->DrawOverlay(device);
+
+    if (!director->d3d11CaptureQueued_) {
+        director->d3d11CaptureQueued_ = director->imguiService_->QueueRender(
+            &CaptureD3D11InterfacesCallback_, director);
     }
-    if (floraControl) {
-        floraControl->DrawOverlay(device);
+}
+
+void SC4PlopAndPaintDirector::CaptureD3D11InterfacesCallback_(void* pThis) {
+    auto* director = static_cast<SC4PlopAndPaintDirector*>(pThis);
+    if (!director || !director->imguiService_) {
+        return;
     }
-    if (floraStripperControl) {
-        floraStripperControl->DrawOverlay(device);
+    director->d3d11CaptureQueued_ = false;
+
+    ID3D11Device* device{};
+    ID3D11DeviceContext* context{};
+    IDXGISwapChain* swapChain{};
+    ID3D11RenderTargetView* renderTarget{};
+    if (!director->imguiService_->AcquireD3D11Interfaces(
+            &device, &context, &swapChain, &renderTarget)) {
+        return;
     }
-    if (decalPainterControl) {
-        decalPainterControl->DrawOverlay(device);
-    }
-    if (decalStripperControl) {
-        decalStripperControl->DrawOverlay(device);
-    }
-    if (scenePickerControl) {
-        scenePickerControl->DrawOverlay(device);
-    }
-    device->Release();
-    dd->Release();
+
+    if (director->d3d11Context_) director->d3d11Context_->Release();
+    if (director->d3d11Device_) director->d3d11Device_->Release();
+    director->d3d11Device_ = device;
+    director->d3d11Context_ = context;
+    director->d3d11DeviceGeneration_ = director->imguiService_->GetDeviceGeneration();
+    swapChain->Release();
+    renderTarget->Release();
 }
 
 void SC4PlopAndPaintDirector::SetLotPlopPanelVisible(const bool visible) {

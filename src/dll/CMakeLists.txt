@@ -57,7 +57,7 @@ list(APPEND SC4_DLL_LINK_LIBS DBPFKitLib)
 
 # Locate and link imgui library produced by sc4-imgui-service
 # IMPORTANT: Must use the sc4-imgui-service imgui.lib, NOT the vcpkg version!
-# The sc4-imgui-service version has DirectX 7 backend support and matches the runtime imgui.dll
+# The service build exports the ImGui ABI used by both its DirectX 7 and DirectX 11 backends.
 find_library(IMGUI_LIB NAMES imgui
     PATHS
         "${IMGUI_LIB_DIR}"
@@ -79,7 +79,7 @@ endif()
 
 # Core dependencies
 if(WIN32)
-    list(APPEND SC4_DLL_LINK_LIBS kernel32 user32 Version d3d11 dxgi windowscodecs ddraw dxguid)
+    list(APPEND SC4_DLL_LINK_LIBS kernel32 user32 Version d3d11 d3dcompiler dxgi windowscodecs ddraw dxguid)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${SC4_DLL_LINK_LIBS})

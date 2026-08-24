@@ -42,6 +42,8 @@ public:
     void SetOnCancel(std::function<void()> onCancel);
     void ProcessPendingActions();
     void DrawOverlay(IDirect3DDevice7* device);
+    void DrawOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+                     cIGZS3DCameraService* cameraService);
 
 private:
     bool UpdateCursorWorldFromScreen_(int32_t screenX, int32_t screenZ);

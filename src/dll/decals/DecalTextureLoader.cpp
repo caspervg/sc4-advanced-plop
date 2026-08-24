@@ -1,7 +1,6 @@
 #include "DecalTextureLoader.hpp"
 
 #include <span>
-#include <utility>
 #include <vector>
 
 #include "../utils/Logger.h"
@@ -85,11 +84,6 @@ bool LoadDecalTexture(cIGZPersistResourceManager* pRM,
     uint16_t height = 0;
     if (!LoadFirstBitmapRGBA(pRM, instanceId, rgba, width, height)) {
         return false;
-    }
-
-    // ImGuiTexture::Create expects BGRA8 - swap R and B channels
-    for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
-        std::swap(rgba[i], rgba[i + 2]);
     }
 
     if (!outTexture.Create(imguiService, width, height, rgba.data())) {

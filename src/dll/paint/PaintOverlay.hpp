@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -11,10 +12,25 @@
 #include "cS3DVector3.h"
 
 class cISTETerrain;
+class cIGZS3DCameraService;
+struct ID3D11Buffer;
+struct ID3D11BlendState;
+struct ID3D11DepthStencilState;
+struct ID3D11Device;
+struct ID3D11DeviceContext;
+struct ID3D11InputLayout;
+struct ID3D11PixelShader;
+struct ID3D11RasterizerState;
+struct ID3D11VertexShader;
 struct PropPaintSettings;
 
 class PaintOverlay {
 public:
+    PaintOverlay() = default;
+    ~PaintOverlay();
+    PaintOverlay(const PaintOverlay&) = delete;
+    PaintOverlay& operator=(const PaintOverlay&) = delete;
+
     static constexpr uint32_t kLayerGrid = 0;
     static constexpr uint32_t kLayerShape = 1;
     static constexpr uint32_t kLayerMarkers = 2;
@@ -74,6 +90,8 @@ public:
                              const std::vector<PreviewPlacement>& plannedPlacements);
 
     void Draw(IDirect3DDevice7* device, bool drawGrid = true);
+    void Draw(ID3D11Device* device, ID3D11DeviceContext* context,
+              cIGZS3DCameraService* cameraService, bool drawGrid = true);
 
 private:
     struct OverlayVertex {
@@ -110,6 +128,8 @@ private:
 
     void SetupRenderState_(IDirect3DDevice7* device);
     void RestoreRenderState_(IDirect3DDevice7* device);
+    bool EnsureD3D11Resources_(ID3D11Device* device, size_t vertexCount);
+    void ReleaseD3D11Resources_();
 
     void EmitLine_(const cS3DVector3& a, const cS3DVector3& b, float thickness, DWORD color, uint32_t layer);
     void EmitQuad_(const cS3DVector3& a, const cS3DVector3& b, const cS3DVector3& c, const cS3DVector3& d,
@@ -142,4 +162,13 @@ private:
 
     std::array<Layer, 3> layers_{};
     SavedRenderState savedState_{};
+    ID3D11Device* d3d11Device_{};
+    ID3D11Buffer* d3d11VertexBuffer_{};
+    ID3D11VertexShader* d3d11VertexShader_{};
+    ID3D11PixelShader* d3d11PixelShader_{};
+    ID3D11InputLayout* d3d11InputLayout_{};
+    ID3D11BlendState* d3d11BlendState_{};
+    ID3D11DepthStencilState* d3d11DepthState_{};
+    ID3D11RasterizerState* d3d11RasterizerState_{};
+    size_t d3d11VertexCapacity_{};
 };

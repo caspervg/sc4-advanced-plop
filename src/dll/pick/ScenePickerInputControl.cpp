@@ -175,6 +175,11 @@ void ScenePickerInputControl::DrawOverlay(IDirect3DDevice7* device) {
     overlay_.Draw(device, false);
 }
 
+void ScenePickerInputControl::DrawOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+                                          cIGZS3DCameraService* cameraService) {
+    overlay_.Draw(device, context, cameraService, false);
+}
+
 bool ScenePickerInputControl::UpdateCursorWorldFromScreen_(const int32_t screenX, const int32_t screenZ) {
     cursorValid_ = false;
     if (!view3D) {

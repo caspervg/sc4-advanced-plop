@@ -34,6 +34,8 @@ public:
     void UndoLastDeletion();
     void ProcessPendingActions();
     void DrawOverlay(IDirect3DDevice7* device);
+    void DrawOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+                     cIGZS3DCameraService* cameraService);
 
 private:
     enum class StripMode { Single, Brush };

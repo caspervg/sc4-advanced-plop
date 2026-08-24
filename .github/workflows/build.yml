@@ -54,6 +54,7 @@ jobs:
       - name: Build sc4-render-services
         working-directory: vendor/sc4-render-services
         run: |
+          cmake -E touch src/sample/SmoothScrollSampleDirector.cpp
           cmake -B build -G "Visual Studio 17 2022" -A Win32
           cmake --build build --config Release --target imgui --parallel
 

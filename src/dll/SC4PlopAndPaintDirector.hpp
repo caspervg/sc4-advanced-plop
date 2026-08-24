@@ -130,6 +130,7 @@ private:
     void UnregisterLotPlopShortcut_();
     static std::filesystem::path GetUserPluginsPath_();
     static void DrawOverlayCallback_(DrawServicePass pass, bool begin, void* pThis);
+    static void CaptureD3D11InterfacesCallback_(void* pThis);
     void ProcessPendingToolActions_();
     void UpdatePaintPanels_();
     void SyncRecentPaintsCache_();
@@ -155,6 +156,10 @@ private:
 private:
     cIGZImGuiService* imguiService_ = nullptr;
     cIGZDrawService* drawService_ = nullptr;
+    ID3D11Device* d3d11Device_ = nullptr;
+    ID3D11DeviceContext* d3d11Context_ = nullptr;
+    uint32_t d3d11DeviceGeneration_ = 0;
+    bool d3d11CaptureQueued_ = false;
     cRZAutoRefCount<cISC4City> pCity_;
     cISC4View3DWin* pView3D_ = nullptr;
     cRZAutoRefCount<cIGZMessageServer2> pMS2_;

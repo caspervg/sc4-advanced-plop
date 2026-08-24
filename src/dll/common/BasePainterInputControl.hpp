@@ -52,6 +52,8 @@ public:
     [[nodiscard]] std::vector<cS3DVector3> GetCollectedPointTerrainAnchors() const;
     void ProcessPendingActions();
     void DrawOverlay(IDirect3DDevice7* device);
+    void DrawOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+                     cIGZS3DCameraService* cameraService);
 
     virtual void UndoLastPlacement();
     virtual void CancelAllPlacements();
